@@ -24,7 +24,11 @@ jobs:
       - name: Live checks
         id: live
         shell: bash  # runs with -eo pipefail, so a failing pytest fails the step despite tee
-        run: python -m pytest -m live -q -rf --maxfail=50 2>&1 | tee live.txt
+        # A public API timing out once is not a broken source: retry the failures once, a minute later.
+        run: |
+          python -m pytest -m live -q -rf --maxfail=50 2>&1 | tee live.txt && exit 0
+          sleep 60
+          python -m pytest -m live -q -rf --last-failed 2>&1 | tee live.txt
         continue-on-error: true
       - name: Open or update an issue when a source broke
         if: steps.live.outcome == 'failure'
