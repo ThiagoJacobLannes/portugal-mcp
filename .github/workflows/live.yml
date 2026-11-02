@@ -30,14 +30,18 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          title="Live source check failing"
-          body="$(printf 'Run: %s/%s/actions/runs/%s
-
-```
-%s
-```' "$GITHUB_SERVER_URL" "$GITHUB_REPOSITORY" "$GITHUB_RUN_ID" "$(grep -E '^(FAILED|ERROR)' live.txt | head -40)")"
+          {
+            echo "Run: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+            echo
+            echo '```'
+            grep -E '^(FAILED|ERROR)' live.txt | head -40
+            echo '```'
+          } > body.md
           num=$(gh issue list --state open --label live-check --json number --jq '.[0].number')
-          if [ -n "$num" ]; then gh issue comment "$num" --body "$body"; else
+          if [ -n "$num" ]; then
+            gh issue comment "$num" --body-file body.md
+          else
             gh label create live-check --color B60205 --force >/dev/null
-            gh issue create --title "$title" --label live-check --body "$body"; fi
+            gh issue create --title "Live source check failing" --label live-check --body-file body.md
+          fi
           exit 1
