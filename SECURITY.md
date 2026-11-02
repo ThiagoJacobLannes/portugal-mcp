@@ -17,6 +17,13 @@ Please report it privately through GitHub: **Security → Report a vulnerability
 
 Public-contract records name the parties. When a party is an individual person, their tax number (NIF) is hidden. Parliament data covers members of Parliament in their public role only.
 
+## Repository protection
+
+- `main` only changes through pull requests whose CI passes (lint, tests on Linux and Windows, `pip-audit`). Force pushes and deletion are blocked.
+- Release tags (`v*`) can only be created by the maintainer and can never be moved or deleted. Only a `v*` tag can use the `pypi` publishing environment.
+- Workflows may only use GitHub's own actions plus the PyPI publish and Sigstore actions, all pinned to a commit SHA.
+- Workflows from first-time and outside contributors need the maintainer's approval before they run.
+
 ## Supply chain
 
 - Dependencies are few, bounded by major version, and audited with `pip-audit` in CI.
