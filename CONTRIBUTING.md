@@ -28,6 +28,8 @@ pytest
 pytest -m live -k <your feature>
 ```
 
+Pull requests are the only way into `main`; CI must pass before a merge.
+
 ## Releases (maintainer)
 
 Bump `version` in `pyproject.toml`, `portugal_mcp/__init__.py` and `server.json` (in both places), update `CHANGELOG.md`, then push a tag `vX.Y.Z`. The publish workflow runs the tests, then publishes to PyPI and the MCP Registry.
