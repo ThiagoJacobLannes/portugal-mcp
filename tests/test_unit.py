@@ -271,3 +271,111 @@ def test_sns_institutions_fall_back_to_bundled_snapshot(monkeypatch):
     rows = c.institutions()
     assert len(rows) > 100
     assert {"name", "latitude", "longitude"} <= set(rows[0])
+
+
+# --- transit (GTFS) -----------------------------------------------------------------
+
+
+def _mini_gtfs(path):
+    import zipfile as zf
+
+    files = {
+        "stops.txt": "stop_id,stop_name,stop_lat,stop_lon,location_type,parent_station\n"
+        "A,Lisboa Oriente,38.7677,-9.0991,1,\nA1,Lisboa Oriente,38.7677,-9.0991,0,A\n"
+        "B,Porto Campanhã,41.1486,-8.5855,0,\nC,Baixa-Chiado,38.7106,-9.1395,0,\n",
+        "routes.txt": "route_id,route_short_name,route_long_name,route_type\nR,AP,Alfa Pendular,2\n",
+        "trips.txt": "route_id,service_id,trip_id,trip_headsign,trip_short_name\n"
+        "R,WK,T1,Porto Campanhã,131\nR,WK,T2,Porto Campanhã,133\nR,SUN,T3,Porto Campanhã,135\n",
+        "stop_times.txt": "trip_id,arrival_time,departure_time,stop_id,stop_sequence\n"
+        "T1,07:09:00,07:09:00,A1,1\nT1,09:48:00,09:48:00,B,2\n"
+        "T2,23:50:00,23:50:00,A1,1\nT2,26:10:00,26:10:00,B,2\n"
+        "T3,10:00:00,10:00:00,A1,1\nT3,12:40:00,12:40:00,B,2\n",
+        "calendar.txt": "service_id,monday,tuesday,wednesday,thursday,friday,saturday,sunday,start_date,end_date\n"
+        "WK,1,1,1,1,1,0,0,20260101,20261231\nSUN,0,0,0,0,0,0,1,20260101,20261231\n",
+        "calendar_dates.txt": "service_id,date,exception_type\nWK,20261208,2\nSUN,20261208,1\n",
+    }
+    with zf.ZipFile(path, "w") as z:
+        for name, text in files.items():
+            z.writestr(name, text)
+
+
+@pytest.fixture
+def mini_transit(tmp_path, monkeypatch):
+    import sqlite3
+
+    from portugal_mcp import transit
+
+    zp, db = tmp_path / "f.zip", tmp_path / "f.sqlite"
+    _mini_gtfs(zp)
+    transit._build("cp", str(zp), str(db), "fp")
+    con = sqlite3.connect(db, check_same_thread=False)
+    con.row_factory = sqlite3.Row
+    monkeypatch.setattr(transit, "_db", lambda op: con)
+    monkeypatch.setattr(transit, "_ops", lambda operator: ["cp"])
+    return transit
+
+
+def test_transit_key_folds_punctuation():
+    from portugal_mcp import transit
+
+    assert transit._key("Baixa-Chiado") == transit._key("baixa / chiado") == "baixa chiado"
+
+
+def test_transit_trips_between_weekday(mini_transit):
+    r = mini_transit.transit_trips_between("Oriente", "Campanha", when="2026-11-03T07:00", window_minutes=120)
+    trips = r["results"][0]["trips"]
+    assert [(t["depart"], t["arrive"], t["duration_min"], t["train_number"]) for t in trips] == [("07:09", "09:48", 159, "131")]
+
+
+def test_transit_after_midnight_and_exceptions(mini_transit):
+    late = mini_transit.transit_trips_between("Oriente", "Campanha", when="2026-11-03T23:30", window_minutes=60)
+    assert late["results"][0]["trips"][0]["arrive"] == "02:10 (+1 day)"
+    # 8 December is a holiday: weekday service removed, Sunday service added
+    hol = mini_transit.transit_trips_between("Oriente", "Campanha", when="2026-12-08T06:00", window_minutes=600)
+    assert [t["train_number"] for t in hol["results"][0]["trips"]] == ["135"]
+
+
+def test_transit_departures_skip_arrivals(mini_transit):
+    dep = mini_transit.transit_departures("Lisboa Oriente", when="2026-11-03T07:00", window_minutes=60)
+    assert [d["time"] for d in dep["results"][0]["departures"]] == ["07:09"]
+    arr = mini_transit.transit_departures("Porto Campanhã", when="2026-11-03T09:30", window_minutes=60)
+    assert arr["results"][0]["departures"] == []
+
+
+# --- wildfires (EFFIS) ----------------------------------------------------------------
+
+EFFIS_SAMPLE = b"""<?xml version='1.0' encoding="UTF-8" ?>
+<wfs:FeatureCollection xmlns:ms="http://mapserver.gis.umn.edu/mapserver" xmlns:gml="http://www.opengis.net/gml" xmlns:wfs="http://www.opengis.net/wfs">
+ <gml:featureMember><ms:modis.ba.poly.season gml:id="a">
+  <ms:FIREDATE>2026-07-02 02:00:00</ms:FIREDATE><ms:LASTUPDATE>2026-07-03 10:00:00</ms:LASTUPDATE>
+  <ms:PROVINCE>Viseu D\xc3\xa3o Laf\xc3\xb5es</ms:PROVINCE><ms:COMMUNE>Cambra</ms:COMMUNE><ms:AREA_HA>13197</ms:AREA_HA>
+  <ms:BROADLEA>10</ms:BROADLEA><ms:CONIFER>30</ms:CONIFER><ms:MIXED>8</ms:MIXED><ms:SCLEROPH>40</ms:SCLEROPH>
+ </ms:modis.ba.poly.season></gml:featureMember>
+ <gml:featureMember><ms:modis.ba.poly.season gml:id="b">
+  <ms:FIREDATE>2026-08-10 02:00:00</ms:FIREDATE><ms:PROVINCE>Algarve</ms:PROVINCE><ms:COMMUNE>Monchique</ms:COMMUNE><ms:AREA_HA>50</ms:AREA_HA>
+ </ms:modis.ba.poly.season></gml:featureMember>
+</wfs:FeatureCollection>"""
+
+
+def test_wildfires_parse_and_totals(monkeypatch):
+    from portugal_mcp import incendios
+
+    class Resp:
+        content = EFFIS_SAMPLE
+
+        def raise_for_status(self):
+            pass
+
+    class Client:
+        def get(self, *a, **k):
+            return Resp()
+
+    monkeypatch.setattr(incendios, "http", lambda: Client())
+    incendios._mem.clear()
+    r = incendios.wildfires()
+    assert r["fires"] == 2 and r["burnt_hectares"] == 13247
+    top = r["largest_or_latest"][0]
+    assert top["region"] == "Viseu Dão Lafões" and top["land_cover_pct"]["forest"] == 48.0
+    assert incendios.wildfires(place="monchique")["fires"] == 1
+    assert "error" in incendios.wildfires(period="decade")
+    assert "error" in incendios.wildfires(year=2001)
