@@ -1,0 +1,11 @@
+__pycache__/
+*.egg-info/
+.venv/
+desktop.ini
+*.json.gz
+*.download
+*.part
+dist/
+build/
+.pytest_cache/
+.ruff_cache/

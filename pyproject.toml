@@ -1,0 +1,62 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "portugal-mcp"
+version = "0.1.0"
+description = "Portugal's public data for AI assistants in one MCP server: weather (IPMA), places, INE and Banco de Portugal statistics, Parliament, public contracts, dados.gov.pt, SNS health, medicines, fuel and EV charging, Lisbon-area buses."
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.10"
+authors = [{ name = "Thiago Jacob Lannes" }]
+keywords = ["mcp", "model-context-protocol", "portugal", "open-data", "ipma", "ine", "parlamento", "sns", "dados-abertos"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Natural Language :: Portuguese",
+    "Natural Language :: English",
+]
+dependencies = [
+    "mcp>=1.2,<2",
+    "httpx>=0.27,<1",
+    "platformdirs>=3.0,<5",
+    "selectolax>=0.3.21,<1",
+    "openpyxl>=3.1,<4",
+    "defusedxml>=0.7,<1",
+    "tzdata; sys_platform == 'win32'",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "ruff>=0.6", "pip-audit>=2.7"]
+
+[project.urls]
+Homepage = "https://github.com/ThiagoJacobLannes/portugal-mcp"
+Issues = "https://github.com/ThiagoJacobLannes/portugal-mcp/issues"
+
+[project.scripts]
+portugal-mcp = "portugal_mcp.server:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["portugal_mcp"]
+
+[tool.hatch.build.targets.sdist]
+include = ["portugal_mcp", "tests", "README.md", "LICENSE", "SECURITY.md", "CONTRIBUTING.md", "CHANGELOG.md", "server.json"]
+
+[tool.ruff]
+line-length = 130
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "S"]
+ignore = ["S101", "S311", "E501", "B008"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["S"]
+# drain() closes over the current download on purpose and runs only within that iteration
+"portugal_mcp/energia/ev.py" = ["B023"]
+
+[tool.pytest.ini_options]
+markers = ["live: hits the real public APIs (run with -m live; the daily CI job does)"]
+addopts = "-m 'not live'"

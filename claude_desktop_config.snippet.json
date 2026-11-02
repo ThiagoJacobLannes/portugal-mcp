@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "portugal": {
+      "command": "uvx",
+      "args": ["portugal-mcp"]
+    }
+  }
+}
