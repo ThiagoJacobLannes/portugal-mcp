@@ -91,3 +91,19 @@ def test_carris():
     from portugal_mcp.transportes import tools
 
     ok(tools.find_stops("Cais do Sodré"))
+
+
+def test_transit():
+    from portugal_mcp import transit
+
+    r = ok(transit.transit_trips_between("Lisboa Oriente", "Porto Campanhã", operator="cp", window_minutes=1440))
+    assert r.get("results")
+    assert ok(transit.transit_departures("Baixa-Chiado", operator="metro_lisboa", window_minutes=1440))["results"]
+    ok(transit.transit_find_stops("Roma-Areeiro", operator="fertagus"))
+    ok(transit.transit_find_stops("Prazeres", operator="carris"))
+
+
+def test_wildfires():
+    from portugal_mcp import incendios
+
+    assert ok(incendios.wildfires(year=2025))["fires"] > 0

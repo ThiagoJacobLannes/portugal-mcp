@@ -6,11 +6,11 @@
 [![Live sources](https://github.com/ThiagoJacobLannes/portugal-mcp/actions/workflows/live.yml/badge.svg)](https://github.com/ThiagoJacobLannes/portugal-mcp/actions/workflows/live.yml)
 [![PyPI](https://img.shields.io/pypi/v/portugal-mcp)](https://pypi.org/project/portugal-mcp/)
 
-**Portugal's public data for AI assistants, in one MCP server.** Ask Claude (or any MCP client) about the weather and warnings, a postal code, unemployment or inflation, the Euribor, what Parliament voted, who won a public contract, how busy the emergency rooms were, whether a medicine is in shortage, the cheapest fuel nearby or when the next bus comes.
+**Portugal's public data for AI assistants, in one MCP server.** Ask Claude (or any MCP client) about the weather and warnings, a postal code, unemployment or inflation, the Euribor, what Parliament voted, who won a public contract, how busy the emergency rooms were, whether a medicine is in shortage, the cheapest fuel nearby, when the next train to Porto leaves or how much has burned this fire season.
 
 **Read-only, no API keys, no accounts.** Every answer comes from an official or public open-data source and says which one and for which date. Not affiliated with any of the sources.
 
-*Português:* servidor MCP com os dados públicos de Portugal (IPMA, INE, Banco de Portugal, Parlamento, Portal BASE, dados.gov.pt, SNS, Infarmed, DGEG, MOBI.E, Carris Metropolitana). Só leitura, sem chaves. As ferramentas aceitam perguntas em português.
+*Português:* servidor MCP com os dados públicos de Portugal (IPMA, INE, Banco de Portugal, Parlamento, Portal BASE, dados.gov.pt, SNS, Infarmed, DGEG, MOBI.E, Carris Metropolitana, horários da CP, Metro de Lisboa, Carris e Fertagus, incêndios do EFFIS). Só leitura, sem chaves. As ferramentas aceitam perguntas em português.
 
 ## What it covers
 
@@ -27,8 +27,10 @@
 | `medicamentos` | `medicine_availability`, `pharmacies`, `find_medicine_near`, `medicine_help` | Infarmed public pages, pharmacies on duty |
 | `energia` | `fuel_prices`, `fuel_station_detail`, `fuel_types`, `ev_chargers`, `ev_charger_detail` | [DGEG](https://precoscombustiveis.dgeg.gov.pt), [MOBI.E](https://www.mobie.pt) |
 | `transportes` | `bus_find_stops`, `bus_next_arrivals`, `bus_line_info`, `bus_service_alerts`, `bus_vehicle_positions` | [Carris Metropolitana API](https://github.com/carrismetropolitana/api) |
+| `transit` | `transit_operators`, `transit_find_stops`, `transit_departures`, `transit_trips_between` | Official GTFS timetables of [CP](https://www.cp.pt), [Metro de Lisboa](https://www.metrolisboa.pt), [Carris](https://www.carris.pt) and [Fertagus](https://www.fertagus.pt) |
+| `incendios` | `wildfires` | [EFFIS](https://forest-fire.emergency.copernicus.eu) (Copernicus, CC BY 4.0) |
 
-There are 42 tools in total. If your client struggles with that many, load only what you need with `PORTUGAL_MCP_FEATURES` (see below).
+There are 47 tools in total. If your client struggles with that many, load only what you need with `PORTUGAL_MCP_FEATURES` (see below).
 
 ### Things to know
 
@@ -37,6 +39,8 @@ There are 42 tools in total. If your client struggles with that many, load only 
 - **Parliament:** votes are recorded per parliamentary group, as the Parliament publishes them. The first call downloads about 100 MB (roughly a minute), then it is cached for a day.
 - **Public contracts:** the yearly BASE files are 15-55 MB, so the first query for a year takes a minute or two. Amounts are contract prices without VAT as reported by the buyer. **Tax numbers (NIF) of individual people are hidden**; company and public-body NIFs are shown.
 - **Fuel / EV:** the first EV query loads the national MOBI.E feed (about 80 s), then it is cached.
+- **Timetables are scheduled, not live.** CP, Metro de Lisboa, Carris and Fertagus publish official GTFS timetables; each is loaded into a local SQLite file on first use (Carris takes about 20 s) and refreshed when the operator publishes a new one. `transit_trips_between` finds direct services only (no changes). Metro do Porto and STCP do not publish a current official feed.
+- **Wildfires are satellite-mapped burnt areas** (EFFIS), a day or more after the fact, not live incidents. For today's danger use `fire_risk`; in an emergency call **112**.
 
 ## Install
 
@@ -81,7 +85,7 @@ Any client that runs stdio servers works: command `uvx`, args `["portugal-mcp"]`
 | `PORTUGAL_MCP_CACHE_DIR` | OS cache dir | Where downloaded files are cached. |
 | `PORTUGAL_MCP_LOG_LEVEL` | `INFO` | Log level; logs go to stderr. |
 
-`portugal-mcp --refresh` downloads the large files ahead of time (Parliament, this year's contracts, EV chargers) and then exits.
+`portugal-mcp --refresh` downloads the large files ahead of time (Parliament, this year's contracts, EV chargers, timetables) and then exits.
 
 ## Example questions
 
@@ -94,6 +98,8 @@ Any client that runs stdio servers works: command `uvx`, args `["portugal-mcp"]`
 - "Preciso de ibuprofeno em Coimbra — está em rutura? Que farmácias estão de serviço?"
 - "Gasóleo mais barato perto de Setúbal" / "Carregadores rápidos perto do Marquês"
 - "Quando passa o próximo autocarro na paragem do Cais do Sodré?"
+- "Comboios diretos de Lisboa Oriente para o Porto amanhã de manhã?" / "Próximo elétrico 28 nos Prazeres?"
+- "Quanta área ardeu este ano no Algarve?"
 
 ## Development
 
@@ -115,7 +121,7 @@ ruff check .
 
 ## Replaces
 
-This package merges four earlier servers by the same author, which are now deprecated: `sns-portugal-mcp`, `portugal-medicines-mcp`, `portugal-fuel-ev-mcp` and `carris-metropolitana-mcp`. Their tools continue here. The SNS, medicine and bus tools now carry a prefix (`sns_`, `medicine_`, `bus_`) so they stay unambiguous among 42 tools.
+This package merges four earlier servers by the same author, which are now deprecated: `sns-portugal-mcp`, `portugal-medicines-mcp`, `portugal-fuel-ev-mcp` and `carris-metropolitana-mcp`. Their tools continue here. The SNS, medicine and bus tools now carry a prefix (`sns_`, `medicine_`, `bus_`) so they stay unambiguous among the 47 tools.
 
 ## License
 

@@ -33,6 +33,8 @@ FEATURES = {
     "medicamentos": ".medicamentos.tools",
     "energia": ".energia.tools",
     "transportes": ".transportes.tools",
+    "transit": ".transit",
+    "incendios": ".incendios",
 }
 
 
@@ -62,7 +64,7 @@ def load(names: list[str]) -> None:
 def refresh() -> None:
     """Download the big open-data files now so the first questions are fast."""
     t0 = time.time()
-    from . import contratos, parlamento
+    from . import contratos, parlamento, transit
     from .energia import tools as energia
 
     steps = [
@@ -70,6 +72,7 @@ def refresh() -> None:
         ("parlamento: deputies", lambda: parlamento._deputies(parlamento.CURRENT)),
         ("contratos: this year", lambda: contratos._contracts(contratos._year(None))),
         ("energia: EV chargers", energia.refresh),
+        *[(f"transit: {op}", lambda op=op: transit._db(op)) for op in transit.OPERATORS],
     ]
     for label, fn in steps:
         t = time.time()

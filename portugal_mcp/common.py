@@ -250,7 +250,7 @@ def iter_json_array(fp: Any, chunk_size: int = 1 << 20) -> Any:
 def download(url: str, dest: Path, *, timeout: float = 600) -> Path:
     """Stream a large file to disk (atomic rename)."""
     tmp = dest.with_suffix(dest.suffix + ".part")
-    with http().stream("GET", url, timeout=httpx.Timeout(timeout, connect=15)) as r:
+    with http().stream("GET", url, headers={"Accept": "*/*"}, timeout=httpx.Timeout(timeout, connect=15)) as r:
         r.raise_for_status()
         with open(tmp, "wb") as f:
             for block in r.iter_bytes(1 << 20):
