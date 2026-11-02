@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.1 — 2026-11-02
+
+- SNS: when tempos.min-saude.pt cannot be reached (it resets connections from some networks, such as cloud hosts outside Portugal), the institution list falls back to a bundled snapshot instead of failing.
+- Live-check workflow: a failing check now fails the job and opens an issue (pipefail).
+
 ## 0.1.0 — 2026-11-02
 
 First release.

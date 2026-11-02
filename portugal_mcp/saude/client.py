@@ -16,6 +16,7 @@ Catalog, institution list and institution-name lists are cached in memory with a
 
 from __future__ import annotations
 
+import json
 import logging
 import math
 import re
@@ -23,6 +24,7 @@ import threading
 import time
 import unicodedata
 from collections.abc import Callable
+from pathlib import Path
 from typing import Any
 
 import httpx
@@ -34,6 +36,9 @@ log = logging.getLogger("portugal_mcp.saude")
 ODS_BASE = "https://transparencia.sns.gov.pt/api/explore/v2.1"
 PORTAL_URL = "https://transparencia.sns.gov.pt"
 INSTITUTIONS_URL = "https://tempos.min-saude.pt/institutions.json"
+# public copy of INSTITUTIONS_URL, used when the site cannot be reached; refresh it on releases
+SNAPSHOT = Path(__file__).with_name("institutions_snapshot.json")
+SNAPSHOT_DATE = "2026-11-02"
 
 CACHE_TTL = 6 * 3600  # seconds; the data changes monthly
 MAX_LIMIT = 100       # Opendatasoft's per-request cap for plain record queries
@@ -240,9 +245,15 @@ class SNSClient:
 
     def institutions(self) -> list[dict[str, Any]]:
         def load() -> list[dict[str, Any]]:
-            data = self._get_json(self.institutions_url)
-            if not isinstance(data, list):
-                raise SNSError("unexpected institutions.json format")
+            try:
+                data = self._get_json(self.institutions_url)
+                if not isinstance(data, list):
+                    raise SNSError("unexpected institutions.json format")
+            except SNSError as exc:
+                # The site resets connections from some networks (e.g. cloud hosts outside Portugal).
+                # The list changes rarely, so fall back to the copy shipped with the package.
+                log.warning("institution list unreachable (%s); using the bundled snapshot of %s", exc, SNAPSHOT_DATE)
+                data = json.loads(SNAPSHOT.read_text(encoding="utf-8"))
             log.info("loaded institution list: %d entries", len(data))
             return data
 

@@ -257,3 +257,17 @@ def test_all_tools_register_with_unique_names_and_docs():
     for t in tools:
         assert t.description and len(t.description) > 20, t.name
     assert "[parlamento]" in server.instructions()
+
+
+def test_sns_institutions_fall_back_to_bundled_snapshot(monkeypatch):
+    from portugal_mcp.saude import client as sns
+
+    c = sns.SNSClient(sns.ODS_BASE, "https://example.invalid/institutions.json")
+
+    def unreachable(url, params=None):
+        raise sns.SNSError("could not reach it: Connection reset by peer")
+
+    monkeypatch.setattr(c, "_get_json", unreachable)
+    rows = c.institutions()
+    assert len(rows) > 100
+    assert {"name", "latitude", "longitude"} <= set(rows[0])
