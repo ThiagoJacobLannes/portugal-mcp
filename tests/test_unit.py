@@ -157,6 +157,18 @@ def test_compact_contract_dates_and_parties():
     assert c["type"] == "Aquisição de serviços"
 
 
+def test_compact_contract_object_parties_2026_format():
+    # IMPIC switched to party objects and an upper-case CPV key in Nov 2026.
+    c = contratos._compact({
+        "idcontrato": "2", "adjudicante": [{"nifEntContrato": "600052737", "descEntContrato": "SAS &amp; Co"}],
+        "adjudicatarios": [{"nifEntContrato": "212345678", "descEntContrato": "Pessoa"}],
+        "CPV": [{"cpvID": "72210000-0", "cpvdescricao": "Software", "CPVObjeto": "Principal"}],
+    })
+    assert c["buyer"][0] == {"nif": "600052737", "name": "SAS & Co"}
+    assert c["suppliers"][0]["nif"] == "individual (NIF hidden)"
+    assert c["cpv"] == "72210000-0 - Software"
+
+
 def test_match_party_by_nif_and_name():
     parties = [{"nif": "500051070", "name": "Município de Lisboa"}]
     assert contratos._match_party(parties, "500 051 070")

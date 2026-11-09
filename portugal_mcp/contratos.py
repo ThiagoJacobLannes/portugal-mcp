@@ -43,14 +43,30 @@ def _resource_url(year: int) -> str:
 _PERSON_NIF = re.compile(r"^(?:[123]\d{8}|45\d{7})$")
 
 
-def _party(raw: str) -> dict[str, Any]:
-    """'500051070 - Município de Lisboa' -> {nif, name}; NIFs of natural persons are masked."""
-    m = re.match(r"\s*(\d{9})\s*-\s*(.*)$", raw or "")
-    nif, name = (m.group(1), m.group(2).strip()) if m else (None, (raw or "").strip())
+def _party(raw: str | dict[str, Any] | None) -> dict[str, Any]:
+    """'500051070 - Município de Lisboa' -> {nif, name}; NIFs of natural persons are masked.
+
+    Since Nov 2026 IMPIC's files give parties as objects
+    ({'nifEntContrato': ..., 'descEntContrato': ...}); older files use the string form.
+    """
+    if isinstance(raw, dict):
+        nif = re.sub(r"\D", "", str(raw.get("nifEntContrato") or "")) or None
+        name = str(raw.get("descEntContrato") or "").strip()
+    else:
+        m = re.match(r"\s*(\d{9})\s*-\s*(.*)$", raw or "")
+        nif, name = (m.group(1), m.group(2).strip()) if m else (None, (raw or "").strip())
     name = html.unescape(name)
     if nif and _PERSON_NIF.match(nif):
         nif = "individual (NIF hidden)"
     return {"nif": nif, "name": name}
+
+
+def _cpv(v: str | dict[str, Any] | None) -> str | None:
+    """CPV as '09135000-4 - Fuelóleos' for both the old string and the Nov 2026 object form."""
+    if isinstance(v, dict):
+        code, desc = v.get("cpvID"), v.get("cpvdescricao")
+        return " - ".join(x for x in (code, desc) if x) or None
+    return v or None
 
 
 def _iso(d: str | None) -> str | None:
@@ -71,7 +87,7 @@ def _compact(c: dict[str, Any]) -> dict[str, Any]:
         "suppliers": [_party(x) for x in c.get("adjudicatarios") or []],
         "price_eur": c.get("precoContratual"),
         "base_price_eur": c.get("precoBaseProcedimento"),
-        "cpv": first(c.get("cpv")),
+        "cpv": _cpv(first(c.get("cpv") or c.get("CPV"))),
         "place": first(c.get("localExecucao")),
         "duration_days": c.get("prazoExecucao"),
         "framework": c.get("DescrAcordoQuadro") or None,
