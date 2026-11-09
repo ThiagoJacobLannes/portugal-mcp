@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.2.1 — 2026-11-09
+
+- Public contracts: IMPIC's November 2026 files give buyers, suppliers and CPV as objects instead of `"NIF - Name"` strings, which made `public_contracts` and `public_contracts_summary` fail (issue #8). Both formats are now read; natural-person NIFs are still hidden.
+
 ## 0.2.0 — 2026-11-02
 
 - New `transit` feature: scheduled departures, direct trips between stations and stop search, from the official GTFS timetables of CP (all trains), Metro de Lisboa, Carris (Lisbon buses, trams, lifts) and Fertagus. Each feed is stored in a local SQLite file and refreshed when the operator publishes a new one.
