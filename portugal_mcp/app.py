@@ -9,7 +9,7 @@ BASE_INSTRUCTIONS = (
     "official statistics (INE, Banco de Portugal), Parliament, public contracts, the national "
     "open-data portal, the health service (SNS), medicines and pharmacies, fuel and EV charging, "
     "Lisbon-area buses, train, metro, bus and tram timetables (CP, Metro de Lisboa, Carris, Fertagus) "
-    "and wildfire burnt areas (EFFIS). Everything is read-only public data. Answer in the user's language and "
+    "wildfire burnt areas (EFFIS) and live civil-protection incidents (ANEPC). Everything is read-only public data. Answer in the user's language and "
     "always say which source and which date or period each figure comes from."
 )
 

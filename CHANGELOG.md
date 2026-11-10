@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- New `ocorrencias` feature: `active_incidents`, the live civil-protection occurrences (ANEPC, via Fogos.pt) of every kind near a postal code, municipality, place name or coordinates, closest first with distance and direction, or the national picture. Needs a personal Fogos.pt API key in `FOGOS_API_KEY`; police activity is not public and not included.
+
 ## 0.2.1 — 2026-11-09
 
 - Public contracts: IMPIC's November 2026 files give buyers, suppliers and CPV as objects instead of `"NIF - Name"` strings, which made `public_contracts` and `public_contracts_summary` fail (issue #8). Both formats are now read; natural-person NIFs are still hidden.

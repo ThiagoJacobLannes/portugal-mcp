@@ -29,8 +29,9 @@
 | `transportes` | `bus_find_stops`, `bus_next_arrivals`, `bus_line_info`, `bus_service_alerts`, `bus_vehicle_positions` | [Carris Metropolitana API](https://github.com/carrismetropolitana/api) |
 | `transit` | `transit_operators`, `transit_find_stops`, `transit_departures`, `transit_trips_between` | Official GTFS timetables of [CP](https://www.cp.pt), [Metro de Lisboa](https://www.metrolisboa.pt), [Carris](https://www.carris.pt) and [Fertagus](https://www.fertagus.pt) |
 | `incendios` | `wildfires` | [EFFIS](https://forest-fire.emergency.copernicus.eu) (Copernicus, CC BY 4.0) |
+| `ocorrencias` | `active_incidents` (live: what civil protection is responding to near a place, closest first; needs a free personal key in `FOGOS_API_KEY`, police activity is not public) | [ANEPC](https://prociv.gov.pt) via [Fogos.pt](https://fogos.pt) ([request a key](https://source.fogos.pt/api/request-access)) |
 
-There are 47 tools in total. If your client struggles with that many, load only what you need with `PORTUGAL_MCP_FEATURES` (see below).
+There are 48 tools in total. If your client struggles with that many, load only what you need with `PORTUGAL_MCP_FEATURES` (see below).
 
 ### Things to know
 
