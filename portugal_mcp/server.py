@@ -85,12 +85,58 @@ def refresh() -> None:
     log.info("refresh done in %.0fs", time.time() - t0)
 
 
+def _run_sync_tools_in_threads(max_parallel: int) -> None:
+    """FastMCP calls plain functions on the event loop, so one slow download would freeze every
+    other user of a shared server. Hand them to worker threads, a few at a time (the big files
+    peak at ~500 MB each while parsing, so the cap also keeps a 1 GiB instance safe)."""
+    import functools
+
+    import anyio
+
+    limiter = anyio.CapacityLimiter(max_parallel)
+    for tool in mcp._tool_manager.list_tools():
+        if tool.is_async:
+            continue
+        fn = tool.fn
+
+        @functools.wraps(fn)
+        async def threaded(*a, _fn=fn, **kw):
+            return await anyio.to_thread.run_sync(functools.partial(_fn, *a, **kw), limiter=limiter)
+
+        tool.fn, tool.is_async = threaded, True
+
+
+def serve_hosted() -> None:
+    """Shared public endpoint (the Cloudflare container): stateless streamable HTTP on 0.0.0.0.
+
+    Only the Worker in front can reach the container, and it does the per-user rate limiting,
+    so DNS-rebinding protection (meant for servers on a user's own machine) is switched off.
+    """
+    from mcp.server.transport_security import TransportSecuritySettings
+    from starlette.requests import Request
+    from starlette.responses import JSONResponse
+
+    s = mcp.settings
+    s.host = os.environ.get("MCP_HOST", "0.0.0.0")  # noqa: S104 - reachable only through the Worker
+    s.port = int(os.environ.get("MCP_PORT", "8000"))
+    s.stateless_http = True
+    s.transport_security = TransportSecuritySettings(enable_dns_rebinding_protection=False)
+    _run_sync_tools_in_threads(int(os.environ.get("PORTUGAL_MCP_MAX_PARALLEL", "2")))
+
+    @mcp.custom_route("/health", methods=["GET"])
+    async def health(_: Request) -> JSONResponse:
+        return JSONResponse({"ok": True, "version": __version__})
+
+    mcp.run(transport="streamable-http")
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(prog="portugal-mcp", description=__doc__)
     ap.add_argument("--version", action="version", version=f"portugal-mcp {__version__}")
     ap.add_argument("--refresh", action="store_true", help="download the large datasets into the cache, then exit")
     ap.add_argument("--list-tools", action="store_true", help="print the enabled tools and exit")
     ap.add_argument("--http", action="store_true", help="serve streamable HTTP on 127.0.0.1:8000 instead of stdio")
+    ap.add_argument("--hosted", action="store_true", help="shared public endpoint: stateless HTTP on 0.0.0.0:8000 (used by the container)")
     args = ap.parse_args()
     names = enabled_features()
     load(names)
@@ -106,7 +152,9 @@ def main() -> None:
         print(f"{len(tools)} tools from {len(names)} features: {', '.join(names)}", file=sys.stderr)
         return
     log.info("portugal-mcp %s: %s", __version__, ", ".join(names))
-    if args.http:
+    if args.hosted:
+        serve_hosted()
+    elif args.http:
         mcp.settings.host = os.environ.get("MCP_HOST", "127.0.0.1")
         mcp.settings.port = int(os.environ.get("MCP_PORT", "8000"))
         mcp.run(transport="streamable-http")

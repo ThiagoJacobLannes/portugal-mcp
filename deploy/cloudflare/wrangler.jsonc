@@ -1,0 +1,28 @@
+// Hosted portugal-mcp: a Worker (rate limit, forwarding) in front of one container running
+// `portugal-mcp --hosted`. Deployed by .github/workflows/deploy-hosted.yml (needs Docker to build).
+// Secret, set once with `npx wrangler secret put FOGOS_API_KEY`: the project's Fogos.pt key.
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "portugal-mcp",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-11-01",
+  "observability": { "enabled": true },
+  "routes": [{ "pattern": "mcp.thiagolannes.com", "custom_domain": true }],
+  "containers": [
+    {
+      "class_name": "PortugalMcp",
+      "image": "../../Dockerfile",
+      "image_build_context": "../..",
+      // 1/4 vCPU, 1 GiB: the biggest file (public contracts) peaks at ~500 MB while parsing
+      "instance_type": "basic",
+      // one shared instance keeps the bill bounded and the caches warm
+      "max_instances": 1
+    }
+  ],
+  "durable_objects": {
+    "bindings": [{ "name": "PORTUGAL_MCP", "class_name": "PortugalMcp" }]
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["PortugalMcp"] }],
+  // per client IP; period must be 10 or 60 seconds
+  "ratelimits": [{ "name": "LIMITER", "namespace_id": "1001", "simple": { "limit": 60, "period": 60 } }]
+}

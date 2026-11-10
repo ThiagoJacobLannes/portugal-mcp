@@ -464,3 +464,17 @@ def test_incidents_need_api_key_and_handle_rate_limit(monkeypatch):
     assert "FOGOS_API_KEY" in o.active_incidents()["error"]
     o, _ = _fogos(monkeypatch, status=429, headers={"Retry-After": "600"})
     assert "10 min" in o.active_incidents()["error"]
+
+
+def test_hosted_mode_moves_sync_tools_to_threads():
+    """--hosted must not run blocking tools on the event loop (one slow download would stall every user)."""
+    server.load(["geo"])
+    server._run_sync_tools_in_threads(2)
+    tool = server.mcp._tool_manager.get_tool("public_holidays")
+    assert tool.is_async
+
+    async def go():
+        return await tool.run({"year": 2026})
+
+    out = anyio.run(go)
+    assert "2026-12-25" in json.dumps(out, default=str)
