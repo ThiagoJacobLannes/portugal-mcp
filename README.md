@@ -47,10 +47,10 @@ There are 48 tools in total. If your client struggles with that many, load only 
 
 ### No install: the hosted endpoint
 
-A free shared copy runs at **`https://mcp.thiagolannes.com/mcp`** (streamable HTTP, no key, no sign-in). In Claude, add it as a custom connector; in Claude Code:
+A free shared copy runs at **`https://mcp.thiagolannes.com/portugal`** (streamable HTTP, no key, no sign-in). In Claude, add it as a custom connector; in Claude Code:
 
 ```bash
-claude mcp add --transport http portugal https://mcp.thiagolannes.com/mcp
+claude mcp add --transport http portugal https://mcp.thiagolannes.com/portugal
 ```
 
 It is rate-limited to 60 requests a minute per IP, and after a quiet spell the first question can take a few seconds (the server wakes up) or a minute or two (if it needs a large file again). For heavy use, run your own copy with `uvx` as below, or `docker build -t portugal-mcp . && docker run -p 8000:8000 portugal-mcp`. The hosted copy is non-commercial and stays that way: its live incidents come from Fogos.pt, whose API terms rule out commercial use.

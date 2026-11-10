@@ -36,38 +36,55 @@ function rpcError(status: number, message: string, extra: Record<string, string>
   });
 }
 
+/**
+ * One domain, one path per server: https://mcp.thiagolannes.com/<server>.
+ * A future server gets its own container class + binding and one line here.
+ */
+const SERVERS: Record<string, { binding: (env: Env) => DurableObjectNamespace<PortugalMcp>; what: string; local: string }> = {
+  portugal: {
+    binding: (env) => env.PORTUGAL_MCP,
+    what: "Portugal's public data: weather, statistics, Parliament, contracts, health, medicines, fuel, transport, live incidents.",
+    local: "uvx portugal-mcp",
+  },
+};
+
 export default {
   async fetch(req: Request, env: Env): Promise<Response> {
     const url = new URL(req.url);
+    const name = url.pathname.replace(/^\/+|\/+$/g, "");
 
-    if (url.pathname === "/" || url.pathname === "") {
+    if (name === "") {
       return Response.json(
         {
-          name: "portugal-mcp",
-          what: "Portugal's public data for AI assistants (MCP server). Free, read-only, open source.",
-          mcp_endpoint: `${url.origin}/mcp`,
-          install_locally: "uvx portugal-mcp",
+          what: "Free, read-only MCP servers for AI assistants, by Thiago Lannes. Open source.",
+          servers: Object.fromEntries(
+            Object.entries(SERVERS).map(([k, v]) => [k, { endpoint: `${url.origin}/${k}`, what: v.what, install_locally: v.local }]),
+          ),
           source: REPO,
         },
         { headers: CORS },
       );
     }
-    if (url.pathname !== "/mcp") return new Response("Not found", { status: 404, headers: CORS });
+    const server = SERVERS[name];
+    if (!server) return new Response("Not found", { status: 404, headers: CORS });
     if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: CORS });
 
     const ip = req.headers.get("CF-Connecting-IP") ?? "unknown";
-    const { success } = await env.LIMITER.limit({ key: ip });
+    const { success } = await env.LIMITER.limit({ key: `${name}:${ip}` });
     if (!success) {
       return rpcError(
         429,
-        `Too many requests (limit: 60 a minute). Try again in a minute, or run your own copy: uvx portugal-mcp (${REPO}).`,
+        `Too many requests (limit: 60 a minute). Try again in a minute, or run your own copy: ${server.local} (${REPO}).`,
         { "Retry-After": "60" },
       );
     }
     const len = Number(req.headers.get("Content-Length") ?? "0");
     if (len > MAX_BODY) return rpcError(413, "Request too large.");
 
-    const res = await getContainer(env.PORTUGAL_MCP).fetch(req);
+    // the container serves MCP at /mcp; the public path is the server's name
+    const inner = new URL(req.url);
+    inner.pathname = "/mcp";
+    const res = await getContainer(server.binding(env)).fetch(new Request(inner, req));
     const out = new Response(res.body, res);
     for (const [k, v] of Object.entries(CORS)) out.headers.set(k, v);
     return out;
