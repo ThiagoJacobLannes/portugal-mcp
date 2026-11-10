@@ -107,3 +107,11 @@ def test_wildfires():
     from portugal_mcp import incendios
 
     assert ok(incendios.wildfires(year=2025))["fires"] > 0
+
+
+@pytest.mark.skipif(not __import__("os").environ.get("FOGOS_API_KEY"), reason="needs a personal Fogos.pt API key")
+def test_active_incidents():
+    from portugal_mcp import ocorrencias
+
+    r = ok(ocorrencias.active_incidents())
+    assert "count" in r and "by_district" in r

@@ -391,3 +391,76 @@ def test_wildfires_parse_and_totals(monkeypatch):
     assert incendios.wildfires(place="monchique")["fires"] == 1
     assert "error" in incendios.wildfires(period="decade")
     assert "error" in incendios.wildfires(year=2001)
+
+
+# --- live civil-protection incidents (ANEPC via Fogos.pt) ------------------------------------
+
+
+def _fogos(monkeypatch, status=200, headers=None):
+    import json
+    from pathlib import Path
+
+    from portugal_mcp import ocorrencias
+
+    payload = json.loads((Path(__file__).parent / "fixtures" / "fogos_active.json").read_text(encoding="utf-8"))
+    seen = {}
+
+    class Resp:
+        status_code = status
+
+        def __init__(self):
+            self.headers = headers or {}
+
+        def json(self):
+            return payload
+
+        def raise_for_status(self):
+            if status >= 400:
+                raise RuntimeError(f"HTTP {status}")
+
+    class Client:
+        def get(self, url, params=None, headers=None, timeout=None):
+            seen.update(url=url, params=params, headers=headers)
+            return Resp()
+
+    monkeypatch.setattr(ocorrencias, "http", lambda: Client())
+    monkeypatch.setenv("FOGOS_API_KEY", "test-key")
+    ocorrencias._mem = None
+    return ocorrencias, seen
+
+
+def test_incidents_near_point_sorted_with_distance(monkeypatch):
+    o, seen = _fogos(monkeypatch)
+    r = o.active_incidents(lat=41.2357, lon=-8.6199, radius_km=15)  # Maia
+    assert seen["headers"]["X-API-Key"] == "test-key" and seen["params"] == {"all": 1}
+    assert r["count"] >= 1
+    d = [i["distance_km"] for i in r["incidents"]]
+    assert d == sorted(d)
+    first = r["incidents"][0]
+    assert first["direction"] in {"N", "NE", "E", "SE", "S", "SW", "W", "NW"}
+    assert first["map"].startswith("https://www.google.com/maps?q=")
+    assert "police" in r["note"].lower() and "112" in r["note"]
+
+
+def test_incidents_kind_and_text_filters(monkeypatch):
+    o, _ = _fogos(monkeypatch)
+    road = o.active_incidents(kind="road")
+    assert road["count"] >= 1 and all("rodovi" in k.lower() or "despiste" in k.lower() for k in road["by_kind"])
+    monkeypatch.setattr(o, "_resolve", lambda near: None)  # a parish/village name: matched by location text
+    txt = o.active_incidents(near="rio maior")
+    assert txt["count"] == 1 and txt["incidents"][0]["what"] == "Mato"
+    assert "error" in o.active_incidents(kind="nope")
+
+
+def test_incidents_national_summary(monkeypatch):
+    o, _ = _fogos(monkeypatch)
+    r = o.active_incidents()
+    assert r["count"] == 8 and r["by_district"] and len(r["biggest"]) <= 15
+
+
+def test_incidents_need_api_key_and_handle_rate_limit(monkeypatch):
+    o, _ = _fogos(monkeypatch)
+    monkeypatch.delenv("FOGOS_API_KEY")
+    assert "FOGOS_API_KEY" in o.active_incidents()["error"]
+    o, _ = _fogos(monkeypatch, status=429, headers={"Retry-After": "600"})
+    assert "10 min" in o.active_incidents()["error"]

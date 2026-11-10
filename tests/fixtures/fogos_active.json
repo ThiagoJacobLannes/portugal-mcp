@@ -1,0 +1,189 @@
+{
+ "success": true,
+ "data": [
+  {
+   "id": "20261598766",
+   "coords": true,
+   "dateTime": {
+    "sec": 1794338940
+   },
+   "date": "10-11-2026",
+   "hour": "19:29",
+   "location": "Porto, Maia, Cidade Da Maia",
+   "localidade": "Cidade Da Maia Via De Francisco Sá Carneiro",
+   "district": "Porto",
+   "concelho": "Maia",
+   "freguesia": "Cidade Da Maia",
+   "lat": 41.229822,
+   "lng": -8.614095,
+   "naturezaCode": "4305",
+   "natureza": "Limpeza de Via e Sinalização de Perigo",
+   "status": "Despacho de 1º Alerta",
+   "man": 2,
+   "terrain": 1,
+   "aerial": 0,
+   "isFire": false
+  },
+  {
+   "id": "20261598728",
+   "coords": true,
+   "dateTime": {
+    "sec": 1794340140
+   },
+   "date": "10-11-2026",
+   "hour": "19:49",
+   "location": "Lisboa, Amadora, Mina De Água",
+   "localidade": "Mina De Água Rua Seara De Trigo",
+   "district": "Lisboa",
+   "concelho": "Amadora",
+   "freguesia": "Mina De Água",
+   "lat": 38.777438,
+   "lng": -9.236908,
+   "naturezaCode": "2403",
+   "natureza": "Colisão rodoviária",
+   "status": "Em Resolução",
+   "man": 8,
+   "terrain": 2,
+   "aerial": 0,
+   "isFire": false
+  },
+  {
+   "id": "20261598724",
+   "coords": true,
+   "dateTime": {
+    "sec": 1794340200
+   },
+   "date": "10-11-2026",
+   "hour": "19:50",
+   "location": "Santarém, Rio Maior, Marmeleira E Assentiz",
+   "localidade": "Assentiz Campo Da Bola",
+   "district": "Santarém",
+   "concelho": "Rio Maior",
+   "freguesia": "Marmeleira E Assentiz",
+   "lat": 39.256161,
+   "lng": -8.860669,
+   "naturezaCode": "3103",
+   "natureza": "Mato",
+   "status": "Despacho de 1º Alerta",
+   "man": 7,
+   "terrain": 2,
+   "aerial": 0,
+   "isFire": true
+  },
+  {
+   "id": "20261598734",
+   "coords": true,
+   "dateTime": {
+    "sec": 1794339960
+   },
+   "date": "10-11-2026",
+   "hour": "19:46",
+   "location": "Setúbal, Setúbal, S.Julião, N.S. Da Anunciada E S. Maria Da Graça",
+   "localidade": "Setúbal R. Salvador Da Bahia",
+   "district": "Setúbal",
+   "concelho": "Setúbal",
+   "freguesia": "S.Julião, N.S. Da Anunciada E S. Maria Da Graça",
+   "lat": 38.529955,
+   "lng": -8.889983,
+   "naturezaCode": "3301",
+   "natureza": "Queda de Árvore",
+   "status": "Despacho de 1º Alerta",
+   "man": 4,
+   "terrain": 1,
+   "aerial": 0,
+   "isFire": false
+  },
+  {
+   "id": "20261598721",
+   "coords": true,
+   "dateTime": {
+    "sec": 1794339600
+   },
+   "date": "10-11-2026",
+   "hour": "19:40",
+   "location": "Lisboa, Torres Vedras, S.Pedro E Santiago, S.Maria E S.Miguel E Matacães",
+   "localidade": "Torres Vedras Av Coronel João Luis De Moura Nº15 3ºf",
+   "district": "Lisboa",
+   "concelho": "Torres Vedras",
+   "freguesia": "S.Pedro E Santiago, S.Maria E S.Miguel E Matacães",
+   "lat": 39.091829,
+   "lng": -9.251952,
+   "naturezaCode": "3315",
+   "natureza": "Inundação de estruturas ou superfícies por precipitação intensa",
+   "status": "Despacho de 1º Alerta",
+   "man": 2,
+   "terrain": 1,
+   "aerial": 0,
+   "isFire": false
+  },
+  {
+   "id": "20261598717",
+   "coords": true,
+   "dateTime": {
+    "sec": 1794339420
+   },
+   "date": "10-11-2026",
+   "hour": "19:37",
+   "location": "Lisboa, Sintra, Agualva E Mira-sintra",
+   "localidade": "Agualva Rua Do Casal N33",
+   "district": "Lisboa",
+   "concelho": "Sintra",
+   "freguesia": "Agualva E Mira-sintra",
+   "lat": 38.769933,
+   "lng": -9.294104,
+   "naturezaCode": "4339",
+   "natureza": "Corte ou Remoção de elementos em perigo de queda",
+   "status": "Despacho de 1º Alerta",
+   "man": 5,
+   "terrain": 1,
+   "aerial": 0,
+   "isFire": false
+  },
+  {
+   "id": "20261598688",
+   "coords": true,
+   "dateTime": {
+    "sec": 1794339780
+   },
+   "date": "10-11-2026",
+   "hour": "19:43",
+   "location": "Braga, Braga, Pedralva",
+   "localidade": "---  Av Do Ranhó Nr44",
+   "district": "Braga",
+   "concelho": "Braga",
+   "freguesia": "Pedralva",
+   "lat": 41.56085,
+   "lng": -8.31321,
+   "naturezaCode": "2127",
+   "natureza": "Indústria, Oficina e Armazém",
+   "status": "Despacho de 1º Alerta",
+   "man": 6,
+   "terrain": 1,
+   "aerial": 0,
+   "isFire": false
+  },
+  {
+   "id": "20261598654",
+   "coords": true,
+   "dateTime": {
+    "sec": 1794337200
+   },
+   "date": "10-11-2026",
+   "hour": "19:00",
+   "location": "Porto, Porto, Ramalde",
+   "localidade": "Ramalde Csrepc Amp",
+   "district": "Porto",
+   "concelho": "Porto",
+   "freguesia": "Ramalde",
+   "lat": 41.168297,
+   "lng": -8.651472,
+   "naturezaCode": "9999",
+   "natureza": "Situação Crítica",
+   "status": "Em Curso",
+   "man": 0,
+   "terrain": 0,
+   "aerial": 0,
+   "isFire": false
+  }
+ ]
+}
