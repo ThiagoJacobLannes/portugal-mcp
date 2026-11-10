@@ -9,3 +9,6 @@ dist/
 build/
 .pytest_cache/
 .ruff_cache/
+node_modules/
+.wrangler/
+.wrangler-dry/

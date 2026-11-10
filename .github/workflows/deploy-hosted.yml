@@ -1,0 +1,40 @@
+# Deploys the hosted endpoint (https://mcp.thiagolannes.com/mcp) to Cloudflare: Worker + container.
+# Manual only. Needs the `hosted` environment with secrets CLOUDFLARE_API_TOKEN and
+# CLOUDFLARE_ACCOUNT_ID. The Fogos.pt key is a Worker secret set once with
+# `npx wrangler secret put FOGOS_API_KEY`; it never passes through GitHub.
+name: Deploy hosted endpoint
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-hosted
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: hosted
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+      - name: Deploy Worker and container
+        working-directory: deploy/cloudflare
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          npm ci
+          npx wrangler deploy
+      - name: Endpoint answers
+        run: |
+          for i in $(seq 1 20); do
+            curl -fsS https://mcp.thiagolannes.com/ && exit 0
+            sleep 15
+          done
+          exit 1

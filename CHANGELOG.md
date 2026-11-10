@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.4.0 — 2026-11-10
+
+- Hosted endpoint: `portugal-mcp --hosted` serves stateless streamable HTTP on `0.0.0.0:8000`, runs the blocking tools in worker threads (at most `PORTUGAL_MCP_MAX_PARALLEL`, default 2) so one slow download doesn't stall other users, and answers `GET /health`. It powers the free public endpoint at `https://mcp.thiagolannes.com/mcp`: a Cloudflare Worker (60 requests a minute per IP) in front of one container (`Dockerfile`, `deploy/cloudflare/`).
+
 ## 0.3.0 — 2026-11-10
 
 - New `ocorrencias` feature: `active_incidents`, the live civil-protection occurrences (ANEPC, via Fogos.pt) of every kind near a postal code, municipality, place name or coordinates, closest first with distance and direction, or the national picture. Needs a personal Fogos.pt API key in `FOGOS_API_KEY`; police activity is not public and not included.

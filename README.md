@@ -45,6 +45,18 @@ There are 48 tools in total. If your client struggles with that many, load only 
 
 ## Install
 
+### No install: the hosted endpoint
+
+A free shared copy runs at **`https://mcp.thiagolannes.com/mcp`** (streamable HTTP, no key, no sign-in). In Claude, add it as a custom connector; in Claude Code:
+
+```bash
+claude mcp add --transport http portugal https://mcp.thiagolannes.com/mcp
+```
+
+It is rate-limited to 60 requests a minute per IP, and after a quiet spell the first question can take a few seconds (the server wakes up) or a minute or two (if it needs a large file again). For heavy use, run your own copy with `uvx` as below, or `docker build -t portugal-mcp . && docker run -p 8000:8000 portugal-mcp`. The hosted copy is non-commercial and stays that way: its live incidents come from Fogos.pt, whose API terms rule out commercial use.
+
+### Install locally
+
 Needs Python 3.10+. With [uv](https://docs.astral.sh/uv/) nothing else is required:
 
 ```bash
@@ -85,6 +97,7 @@ Any client that runs stdio servers works: command `uvx`, args `["portugal-mcp"]`
 | `PORTUGAL_MCP_FEATURES` | all | Comma list of features to load (`clima,geo,ine`) or to drop (`-contratos,-parlamento`). |
 | `PORTUGAL_MCP_CACHE_DIR` | OS cache dir | Where downloaded files are cached. |
 | `PORTUGAL_MCP_LOG_LEVEL` | `INFO` | Log level; logs go to stderr. |
+| `PORTUGAL_MCP_MAX_PARALLEL` | `2` | `--hosted` only: how many tool calls run at once. |
 
 `portugal-mcp --refresh` downloads the large files ahead of time (Parliament, this year's contracts, EV chargers, timetables) and then exits.
 
@@ -118,6 +131,7 @@ ruff check .
 - **CI:** lint and unit tests on Linux and Windows for every push and pull request, plus `pip-audit`.
 - **Live sources:** a daily run against the real APIs that opens an issue when a source changes its format.
 - **Dependabot:** proposes dependency and GitHub Actions updates. Actions are pinned by commit SHA.
+- **Hosted endpoint:** CI builds the container image and checks the Worker on every pull request; deploys are manual (`Deploy hosted endpoint` workflow).
 - **Releases:** only from a version tag, and only after the tests pass. Publishing goes through PyPI trusted publishing and the official MCP Registry, with no stored tokens.
 
 ## Replaces
