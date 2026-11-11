@@ -780,13 +780,19 @@ def test_keep_warm_refreshes_in_the_background(monkeypatch):
     assert ran.wait(5)
 
 
-def test_heavy_builds_never_overlap_and_are_not_repeated(monkeypatch, tmp_path):
-    import threading
-
+@pytest.fixture
+def big_cache(monkeypatch, tmp_path):
     from portugal_mcp import common
 
     monkeypatch.setenv("PORTUGAL_MCP_CACHE_DIR", str(tmp_path))
-    monkeypatch.setattr(common.FileCache, "_remote_modified", lambda self, url: None)
+    monkeypatch.setattr(common.BigFileCache, "_mem", {})
+    monkeypatch.setattr(common.BigFileCache, "_remote_modified", lambda self, url: "v1")
+    return common
+
+
+def test_big_files_build_one_at_a_time_and_once(big_cache):
+    import threading
+
     running, peak, builds = [0], [0], []
     gate = threading.Lock()
 
@@ -798,10 +804,10 @@ def test_heavy_builds_never_overlap_and_are_not_repeated(monkeypatch, tmp_path):
         builds.append(url)
         with gate:
             running[0] -= 1
-        return [1]
+        return [{"n": 1}]
 
     def call(name):
-        common.FileCache("t", name, f"https://x/{name}", heavy=True).get(build)
+        big_cache.BigFileCache("t", name, f"https://x/{name}").get(build)
 
     threads = [threading.Thread(target=call, args=(n,)) for n in ("a", "a", "b")]
     for t in threads:
@@ -812,18 +818,67 @@ def test_heavy_builds_never_overlap_and_are_not_repeated(monkeypatch, tmp_path):
     assert sorted(builds) == ["https://x/a", "https://x/b"]  # the second "a" reused the first
 
 
-def test_background_refresh_rebuilds_before_expiry(monkeypatch, tmp_path):
-    from portugal_mcp import common
+def test_big_files_keep_one_shared_copy_and_reload_from_disk(big_cache):
+    c = big_cache.BigFileCache
+    a = c("t", "big", "https://x/big").get(lambda u: [{"n": 1}, {"n": "é"}])
+    b = c("t", "big", "https://x/big").get(lambda u: [{"n": 9}])
+    assert a is b  # same parsed copy: no re-parse, no second copy in memory
+    c._mem.clear()  # a restart: rows come back from disk without building
+    again = c("t", "big", "https://x/big").get(lambda u: [{"n": 9}])
+    assert again["data"] == [{"n": 1}, {"n": "é"}]
 
-    monkeypatch.setenv("PORTUGAL_MCP_CACHE_DIR", str(tmp_path))
-    monkeypatch.setattr(common.FileCache, "_remote_modified", lambda self, url: None)
+
+def test_background_refresh_rebuilds_big_files_before_expiry(big_cache, monkeypatch):
+    c = big_cache.BigFileCache
     builds = []
-    common.FileCache("t", "c", "https://x/c", ttl=3600).get(lambda u: builds.append(u) or [1])
-    common.FileCache("t", "c", "https://x/c", ttl=3600).get(lambda u: builds.append(u) or [1])
-    assert len(builds) == 1  # fresh for users
-    with common.refreshing_ahead(3000):
-        common.FileCache("t", "c", "https://x/c", ttl=3600).get(lambda u: builds.append(u) or [1])
+    c("t", "c", "https://x/c", ttl=3600).get(lambda u: builds.append(u) or [1])
+    with big_cache.refreshing_ahead(3000):
+        c("t", "c", "https://x/c", ttl=3600).get(lambda u: builds.append(u) or [2])
     assert len(builds) == 1  # an hour left, 50 min ahead: still fresh
-    with common.refreshing_ahead(3700):
-        common.FileCache("t", "c", "https://x/c", ttl=3600).get(lambda u: builds.append(u) or [1])
-    assert len(builds) == 2  # would expire before the next pass: rebuilt now
+    with big_cache.refreshing_ahead(3700):
+        doc = c("t", "c", "https://x/c", ttl=3600).get(lambda u: builds.append(u) or [2])
+    assert len(builds) == 1 and doc["data"] == [1]  # upstream unchanged: kept, no download
+    monkeypatch.setattr(big_cache.BigFileCache, "_remote_modified", lambda self, url: "v2")
+    with big_cache.refreshing_ahead(3700):
+        doc = c("t", "c", "https://x/c", ttl=3600).get(lambda u: builds.append(u) or [2])
+    assert len(builds) == 2 and doc["data"] == [2]  # changed upstream: rebuilt now, not at expiry
+
+
+def test_big_file_build_failure_serves_the_copy_on_disk(big_cache, monkeypatch):
+    c = big_cache.BigFileCache
+    c("t", "s", "https://x/s", ttl=0).get(lambda u: [1])
+    monkeypatch.setattr(big_cache.BigFileCache, "_remote_modified", lambda self, url: "v2")
+
+    def broken(url):
+        raise RuntimeError("down")
+
+    doc = c("t", "s", "https://x/s", ttl=0).get(broken)
+    assert doc["data"] == [1] and doc["stale"] is True
+
+
+def test_ev_status_served_from_cache_while_refreshing(monkeypatch):
+    import threading
+
+    from portugal_mcp.energia import ev
+
+    d = ev.EVData()
+    d.static = {"fetched_epoch": time.time(), "sites": []}
+    d.status = {"fetched_epoch": time.time() - 20 * 60, "points": {}}  # 20 min old: past the 10-min TTL
+    started, release = threading.Event(), threading.Event()
+
+    def slow_load(progress):
+        started.set()
+        release.wait(5)
+        d.status = {"fetched_epoch": time.time(), "points": {"x": 1}}
+
+    monkeypatch.setattr(d, "_load_status", slow_load)
+    t = time.time()
+    d.ensure()
+    assert time.time() - t < 1 and started.wait(2)  # answered at once, refresh running behind
+    d.ensure()  # a second caller while the refresh runs: not blocked, no second download
+    release.set()
+    for _ in range(50):
+        if not d._status_refreshing:
+            break
+        time.sleep(0.05)
+    assert d.status["points"] == {"x": 1}

@@ -2,16 +2,18 @@
 
 from __future__ import annotations
 
+import functools
 import html
 import io
 import logging
 import re
 import zipfile
+from collections.abc import Callable
 from datetime import date
 from typing import Any
 
 from .app import mcp, note
-from .common import FileCache, cache_dir, clamp, download, fail, get_json, iter_json_array, keywords, norm
+from .common import BigFileCache, cache_dir, clamp, download, fail, get_json, iter_json_array, keywords, norm
 
 log = logging.getLogger("portugal_mcp.contratos")
 
@@ -108,7 +110,7 @@ def _contracts(year: int) -> list[dict[str, Any]]:
             dest.unlink(missing_ok=True)
 
     ttl = 86400 if year >= date.today().year - 1 else 30 * 86400
-    return FileCache("contratos", f"contratos-{year}", lambda: _resource_url(year), ttl=ttl, heavy=True).get(build)["data"]
+    return BigFileCache("contratos", f"contratos-{year}", lambda: _resource_url(year), ttl=ttl).get(build)["data"]
 
 
 def _year(year: int | None) -> int:
@@ -118,12 +120,22 @@ def _year(year: int | None) -> int:
     return y
 
 
-def _match_party(parties: list[dict[str, Any]], q: str) -> bool:
+@functools.lru_cache(maxsize=1 << 17)
+def _norm_name(name: str | None) -> str:
+    return norm(name)  # the same few thousand buyers and suppliers repeat across ~200,000 rows
+
+
+def _party_matcher(q: str) -> Callable[[list[dict[str, Any]]], bool]:
+    """Prepare the query once; the result is called for every contract (the hosted copy has 1/4 vCPU)."""
     digits = re.sub(r"\D", "", q)
     if len(digits) == 9:
-        return any(p["nif"] == digits for p in parties)
+        return lambda parties: any(p["nif"] == digits for p in parties)
     nq = norm(q)
-    return any(nq in norm(p["name"]) for p in parties)
+    return lambda parties: any(nq in _norm_name(p["name"]) for p in parties)
+
+
+def _match_party(parties: list[dict[str, Any]], q: str) -> bool:
+    return _party_matcher(q)(parties)
 
 
 @mcp.tool()
@@ -153,15 +165,18 @@ def public_contracts(
     try:
         y = _year(year)
         words = keywords(query) if query else []
+        nproc = norm(procedure) if procedure else None
+        buyer_ok = _party_matcher(buyer) if buyer else None
+        supplier_ok = _party_matcher(supplier) if supplier else None
         rows = []
         for c in _contracts(y):
             if words and not all(w in norm(c["object"]) for w in words):
                 continue
-            if buyer and not _match_party(c["buyer"], buyer):
+            if buyer_ok and not buyer_ok(c["buyer"]):
                 continue
-            if supplier and not _match_party(c["suppliers"], supplier):
+            if supplier_ok and not supplier_ok(c["suppliers"]):
                 continue
-            if procedure and norm(procedure) not in norm(c["procedure"]):
+            if nproc and nproc not in _norm_name(c["procedure"]):
                 continue
             price = c["price_eur"] or 0
             if min_value is not None and price < min_value:
@@ -199,10 +214,11 @@ def public_contracts_summary(entity: str, role: str = "any", year: int | None = 
         y = _year(year)
         r = norm(role)
         as_buyer, as_supplier = [], []
+        is_entity = _party_matcher(entity)
         for c in _contracts(y):
-            if r in ("buyer", "any") and _match_party(c["buyer"], entity):
+            if r in ("buyer", "any") and is_entity(c["buyer"]):
                 as_buyer.append(c)
-            if r in ("supplier", "any") and _match_party(c["suppliers"], entity):
+            if r in ("supplier", "any") and is_entity(c["suppliers"]):
                 as_supplier.append(c)
 
         def summarise(rows: list[dict[str, Any]], other: str) -> dict[str, Any] | None:
@@ -220,7 +236,7 @@ def public_contracts_summary(entity: str, role: str = "any", year: int | None = 
                     partners[k][0] += 1
                     partners[k][1] += v / max(1, len(c[other]))
                 for p in c["buyer" if other == "suppliers" else "suppliers"]:
-                    if _match_party([p], entity):
+                    if is_entity([p]):
                         names.add(p["name"])
             tops = sorted(partners.items(), key=lambda kv: -kv[1][1])[: clamp(top, 1, 50, 10)]
             return {

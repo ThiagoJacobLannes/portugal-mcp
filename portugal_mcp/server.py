@@ -109,8 +109,19 @@ def _keep_warm(hours: float) -> None:
                 refresh()
             time.sleep(hours * 3600)
 
+    def ev_status_loop() -> None:
+        # EV live status: calls answer from a copy up to an hour old and refresh it behind the
+        # scenes; this keeps it under the hour even when nobody asked for a while
+        from .energia import ev
+
+        while True:
+            time.sleep(50 * 60)
+            ev.data()._refresh_status()
+
     _warm["every_hours"] = hours
     threading.Thread(target=loop, name="keep-warm", daemon=True).start()
+    if "energia" in enabled_features():
+        threading.Thread(target=ev_status_loop, name="keep-warm-ev", daemon=True).start()
     log.info("keep-warm: refreshing the large datasets every %g h", hours)
 
 

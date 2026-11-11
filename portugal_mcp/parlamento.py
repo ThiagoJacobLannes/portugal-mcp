@@ -10,7 +10,7 @@ from datetime import date
 from typing import Any
 
 from .app import mcp, note
-from .common import FileCache, cache_dir, clamp, download, fail, get_json, iter_json_array, keywords, norm
+from .common import BigFileCache, FileCache, cache_dir, clamp, download, fail, get_json, iter_json_array, keywords, norm
 
 log = logging.getLogger("portugal_mcp.parlamento")
 
@@ -113,7 +113,7 @@ def _initiatives(leg: str) -> list[dict[str, Any]]:
         finally:
             dest.unlink(missing_ok=True)
 
-    return FileCache("parlamento", f"iniciativas-{leg}", _iniciativas_url(leg), heavy=True).get(build)["data"]
+    return BigFileCache("parlamento", f"iniciativas-{leg}", _iniciativas_url(leg)).get(build)["data"]
 
 
 def _deputies(leg: str) -> dict[str, Any]:
@@ -143,7 +143,7 @@ def _deputies(leg: str) -> dict[str, Any]:
             "as_of": today,
         }
 
-    return FileCache("parlamento", f"base-{leg}", _base_url(leg), heavy=True).get(build)["data"]
+    return FileCache("parlamento", f"base-{leg}", _base_url(leg)).get(build)["data"]
 
 
 def _vote_summary(v: dict[str, Any]) -> dict[str, Any]:

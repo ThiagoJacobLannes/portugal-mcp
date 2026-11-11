@@ -108,11 +108,10 @@ class FileCache:
     unchanged upstream file is not downloaded again.
     """
 
-    def __init__(self, feature: str, name: str, url: str | Callable[[], str], ttl: float = 86400, heavy: bool = False):
+    def __init__(self, feature: str, name: str, url: str | Callable[[], str], ttl: float = 86400):
         self.path = cache_dir(feature) / f"{name}.json.gz"
         self.url = url
         self.ttl = ttl
-        self.heavy = heavy
         self._mem: Any = None
 
     def _url(self) -> str:
@@ -149,9 +148,6 @@ class FileCache:
         ttl = fresh_for(self.ttl)
         if self._mem is not None and not force and time.time() - self._mem["_t"] < ttl:
             return self._mem
-        if self.heavy:
-            with HEAVY:  # one big build at a time; whoever waited finds the file another thread built
-                return self._get(build, force, ttl)
         return self._get(build, force, ttl)
 
     def _get(self, build: Callable[[str], Any], force: bool, ttl: float) -> dict[str, Any]:
@@ -188,6 +184,102 @@ class FileCache:
         self._write(doc)
         self._mem = doc
         return doc
+
+
+class BigFileCache:
+    """A large downloaded-and-parsed list of rows (public contracts, Parliament initiatives).
+
+    Unlike FileCache, the process keeps ONE parsed copy in memory, shared by every call: re-reading
+    a 120 MB file per call peaked at ~1 GB, too much for the hosted copy's 1 GiB. On disk the
+    metadata sits in its own small file, so freshness checks never touch the data, and the rows are
+    one JSON object per line, so loading never holds the whole text and the parsed rows together.
+    Loads and builds run one at a time in the process (HEAVY), and an outdated copy is dropped from
+    memory before its replacement is built, so the two never coexist.
+    """
+
+    _mem: dict[Path, dict[str, Any]] = {}
+    _remote_modified = FileCache._remote_modified
+
+    def __init__(self, feature: str, name: str, url: str | Callable[[], str], ttl: float = 86400):
+        d = cache_dir(feature)
+        self.data_path = d / f"{name}.jsonl.gz"
+        self.meta_path = d / f"{name}.meta.json"
+        self.url = url
+        self.ttl = ttl
+
+    def _meta(self) -> dict[str, Any] | None:
+        try:
+            meta = json.loads(self.meta_path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return None
+        return meta if self.data_path.exists() else None
+
+    def _save_meta(self, meta: dict[str, Any]) -> None:
+        tmp = self.meta_path.with_suffix(".tmp")
+        tmp.write_text(json.dumps(meta), encoding="utf-8")
+        os.replace(tmp, self.meta_path)
+
+    def _load(self, meta: dict[str, Any]) -> dict[str, Any]:
+        with gzip.open(self.data_path, "rt", encoding="utf-8") as f:
+            rows = [json.loads(line) for line in f]
+        return {**meta, "data": rows}
+
+    def _save(self, rows: list[Any], meta: dict[str, Any]) -> None:
+        tmp = self.data_path.with_suffix(".tmp")
+        with gzip.open(tmp, "wt", encoding="utf-8") as f:
+            for r in rows:
+                f.write(json.dumps(r, ensure_ascii=False, separators=(",", ":")))
+                f.write("\n")
+        os.replace(tmp, self.data_path)
+        self._save_meta(meta)
+
+    def get(self, build: Callable[[str], list[Any]]) -> dict[str, Any]:
+        """Return {"data": rows, "fetched_at": iso, "source_modified": str|None[, "stale": True]}."""
+        ttl = fresh_for(self.ttl)
+        doc = self._mem.get(self.data_path)
+        if doc is not None and time.time() - doc["_t"] < ttl:
+            return doc
+        with HEAVY:
+            doc = self._mem.get(self.data_path)
+            if doc is not None and time.time() - doc["_t"] < ttl:
+                return doc  # another thread just loaded or refreshed it
+            url = self.url() if callable(self.url) else self.url
+            meta = self._meta()
+            if meta and meta.get("url") == url:
+                fresh = time.time() - meta["_t"] < ttl
+                mod = None if fresh else self._remote_modified(url)
+                if fresh or (mod and mod == meta.get("source_modified")):
+                    if not fresh:
+                        meta["_t"] = time.time()
+                        self._save_meta(meta)
+                    if doc is not None:  # unchanged upstream: keep the copy in memory
+                        doc.update(_t=meta["_t"])
+                        return doc
+                    doc = self._load(meta)
+                    self._mem[self.data_path] = doc
+                    return doc
+            self._mem.pop(self.data_path, None)  # free the old copy before building the new one
+            del doc
+            try:
+                mod = self._remote_modified(url)
+                rows = build(url)
+            except Exception:
+                if meta:  # serve the copy on disk rather than fail
+                    log.warning("refresh of %s failed; serving cached copy", self.data_path.name, exc_info=True)
+                    doc = {**self._load(meta), "stale": True}
+                    self._mem[self.data_path] = doc
+                    return doc
+                raise
+            meta = {
+                "url": url,
+                "_t": time.time(),
+                "fetched_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                "source_modified": mod,
+            }
+            self._save(rows, meta)
+            doc = {**meta, "data": rows}
+            self._mem[self.data_path] = doc
+            return doc
 
 
 def http_date(value: str | None) -> str | None:
