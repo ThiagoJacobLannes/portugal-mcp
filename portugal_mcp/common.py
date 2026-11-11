@@ -38,9 +38,10 @@ def cache_dir(feature: str) -> Path:
     return d
 
 
-# The big files (contracts, Parliament, EV chargers, timetables) peak at ~500 MB each while they are
-# downloaded and parsed. Only one such build runs at a time in the whole process, whether a user or
-# the hosted copy's background refresh started it, so a 1 GiB container can't run out of memory.
+# The big files (public contracts, Parliament initiatives: see BigFileCache) peak at ~500 MB while
+# they are parsed. Only one is built or loaded at a time in the whole process, whether a user or the
+# hosted copy's background refresh asked for it, so a 1 GiB container can't run out of memory.
+# (Timetables and the EV inventory are streamed and stay small, so they don't wait for this.)
 HEAVY = threading.Lock()
 
 _ahead = threading.local()

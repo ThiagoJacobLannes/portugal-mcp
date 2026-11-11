@@ -106,7 +106,7 @@ Any client that runs stdio servers works: command `uvx`, args `["portugal-mcp"]`
 | `PORTUGAL_MCP_FEATURES` | all | Comma list of features to load (`clima,geo,ine`) or to drop (`-contratos,-parlamento`). |
 | `PORTUGAL_MCP_CACHE_DIR` | OS cache dir | Where downloaded files are cached. |
 | `PORTUGAL_MCP_LOG_LEVEL` | `INFO` | Log level; logs go to stderr. |
-| `PORTUGAL_MCP_MAX_PARALLEL` | `2` | `--hosted` only: how many tool calls run at once. |
+| `PORTUGAL_MCP_MAX_PARALLEL` | `8` | `--hosted` only: how many tool calls run at once (the large files are still loaded one at a time). |
 | `PORTUGAL_MCP_KEEP_WARM_HOURS` | `0` (off) | `--hosted` only: download and parse the large files in the background at start and every N hours, one at a time, rebuilding any that would expire before the next pass. |
 
 `portugal-mcp --refresh` downloads the large files ahead of time (Parliament, this year's contracts, EV chargers, timetables) and then exits.

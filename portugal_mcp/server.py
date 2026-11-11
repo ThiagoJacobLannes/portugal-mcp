@@ -71,15 +71,16 @@ def refresh() -> None:
     from . import contratos, parlamento, transit, turismo
     from .energia import tools as energia
 
-    # One step at a time, so at most one big file is being parsed (see common.HEAVY).
+    # One step at a time, so at most one big file is being parsed (see common.HEAVY). Quick and
+    # most-asked first: after a deploy, timetables are ready in about a minute, the rest in ~4.
     steps = [
-        ("parlamento: initiatives", lambda: parlamento._initiatives(parlamento.CURRENT)),
-        ("parlamento: deputies", lambda: parlamento._deputies(parlamento.CURRENT)),
-        ("contratos: this year", lambda: contratos._contracts(contratos._year(None))),
-        ("energia: EV chargers", energia.refresh),
         # the AL register is queried on Turismo de Portugal's server; warm its layer and DNS lookup
         ("turismo: local accommodation", lambda: turismo._layer_meta(turismo.AL_LAYER)),
         *[(f"transit: {op}", lambda op=op: transit._db(op)) for op in transit.OPERATORS],
+        ("contratos: this year", lambda: contratos._contracts(contratos._year(None))),
+        ("parlamento: initiatives", lambda: parlamento._initiatives(parlamento.CURRENT)),
+        ("parlamento: deputies", lambda: parlamento._deputies(parlamento.CURRENT)),
+        ("energia: EV chargers", energia.refresh),
     ]
     for label, fn in steps:
         t = time.time()
@@ -127,8 +128,8 @@ def _keep_warm(hours: float) -> None:
 
 def _run_sync_tools_in_threads(max_parallel: int) -> None:
     """FastMCP calls plain functions on the event loop, so one slow download would freeze every
-    other user of a shared server. Hand them to worker threads, a few at a time (the big files
-    peak at ~500 MB each while parsing, so the cap also keeps a 1 GiB instance safe)."""
+    other user of a shared server. Hand them to worker threads, a few at a time (memory is kept
+    in check by common.HEAVY: the big files are downloaded, parsed and loaded one at a time)."""
     import functools
 
     import anyio
@@ -161,7 +162,9 @@ def serve_hosted() -> None:
     s.port = int(os.environ.get("MCP_PORT", "8000"))
     s.stateless_http = True
     s.transport_security = TransportSecuritySettings(enable_dns_rebinding_protection=False)
-    _run_sync_tools_in_threads(int(os.environ.get("PORTUGAL_MCP_MAX_PARALLEL", "2")))
+    # Memory is bounded by common.HEAVY (one big file at a time), not by this: a call waiting for a
+    # big file must not hold back the quick ones, so allow several at once.
+    _run_sync_tools_in_threads(int(os.environ.get("PORTUGAL_MCP_MAX_PARALLEL", "8")))
     warm = float(os.environ.get("PORTUGAL_MCP_KEEP_WARM_HOURS", "0"))
     if warm > 0:
         _keep_warm(warm)
