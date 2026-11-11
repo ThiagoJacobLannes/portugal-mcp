@@ -32,6 +32,7 @@ from typing import Any
 import httpx
 
 from ..common import cache_dir as shared_cache_dir
+from ..common import fresh_for
 from .common import USER_AGENT, haversine_km, norm
 
 log = logging.getLogger("portugal_mcp.energia")
@@ -47,6 +48,7 @@ STATUS_URLS = [
 ]
 STATIC_TTL = 24 * 3600
 STATUS_TTL = 10 * 60
+STATUS_SERVE_STALE = 60 * 60  # up to this age, answer with the cached status and refresh it in the background
 CACHE_VERSION = 1
 
 SOURCE = (
@@ -378,6 +380,7 @@ class EVData:
         self.status: dict[str, Any] | None = None
         self._points_by_status_key: dict[str, list[Any]] = {}
         self.warnings: list[str] = []
+        self._status_refreshing = False
 
     # -- refresh ------------------------------------------------------------------
 
@@ -388,7 +391,7 @@ class EVData:
         path = cache_dir() / "mobie_static.json.gz"
         if self.static is None:
             self.static = _read_json(path)
-        if self._fresh(self.static, STATIC_TTL):
+        if self._fresh(self.static, fresh_for(STATIC_TTL)):
             return
         log.info("refreshing MOBI.E static inventory (first run can take 1-3 minutes)")
         if progress:
@@ -485,11 +488,28 @@ class EVData:
             self.warnings = []
             self._load_static(progress)
             if need_status:
+                if self._fresh(self.status, STATUS_SERVE_STALE) and not self._fresh(self.status, STATUS_TTL):
+                    # a 20-second download per call is too slow: answer now (the result says how old
+                    # the status is) and fetch a newer one for the next caller
+                    if not self._status_refreshing:
+                        self._status_refreshing = True
+                        threading.Thread(target=self._refresh_status, name="ev-status", daemon=True).start()
+                    return
                 try:
                     self._load_status(progress)
                 except Exception as exc:  # noqa: BLE001 — inventory still useful without live status
                     log.warning("status unavailable: %s", exc)
                     self.warnings.append(f"Live status and prices are unavailable right now ({exc}).")
+
+    def _refresh_status(self) -> None:
+        # Not under self._lock, so other calls keep answering from the cached status meanwhile;
+        # the new status replaces the old one in a single assignment at the end.
+        try:
+            self._load_status(None)
+        except Exception as exc:  # noqa: BLE001 — the cached status keeps serving
+            log.warning("background status refresh failed: %s", exc)
+        finally:
+            self._status_refreshing = False
 
     def freshness(self) -> dict[str, Any]:
         out: dict[str, Any] = {}
