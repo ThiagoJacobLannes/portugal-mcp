@@ -8,6 +8,7 @@ Line names, next stops and destinations come from the operator's timetable when 
 from __future__ import annotations
 
 import logging
+import re
 import sqlite3
 import threading
 import time
@@ -44,6 +45,17 @@ _cache: dict[str, tuple[float, list[dict[str, Any]]]] = {}
 _lock = threading.Lock()
 
 
+def _epoch(ts: Any) -> float | None:
+    """'2026-11-11T09:22:07.00Z' -> epoch seconds (Python 3.10's fromisoformat needs 0/3/6 fraction digits)."""
+    if not ts:
+        return None
+    text = re.sub(r"\.(\d+)", lambda m: "." + m.group(1).ljust(6, "0")[:6], str(ts)).replace("Z", "+00:00")
+    try:
+        return datetime.fromisoformat(text).timestamp()
+    except ValueError:
+        return None
+
+
 def _stcp() -> list[dict[str, Any]]:
     rows = http().get(
         LIVE["stcp"]["url"],
@@ -58,10 +70,7 @@ def _stcp() -> list[dict[str, Any]]:
             ann[k] = v
         coords = (r.get("location") or {}).get("coordinates") or [None, None]
         ts = r.get("observationDateTime") or r.get("dateModified")
-        try:
-            epoch = datetime.fromisoformat(str(ts).replace("Z", "+00:00")).timestamp()
-        except ValueError:
-            epoch = None
+        epoch = _epoch(ts)
         if coords[0] is None:
             continue
         out.append({
