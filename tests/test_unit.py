@@ -478,3 +478,14 @@ def test_hosted_mode_moves_sync_tools_to_threads():
 
     out = anyio.run(go)
     assert "2026-12-25" in json.dumps(out, default=str)
+
+
+def test_keep_warm_refreshes_in_the_background(monkeypatch):
+    import threading
+
+    from portugal_mcp import server
+
+    ran = threading.Event()
+    monkeypatch.setattr(server, "refresh", ran.set)
+    server._keep_warm(6)
+    assert ran.wait(5)

@@ -19,6 +19,8 @@ export class PortugalMcp extends Container<Env> {
   envVars = {
     FOGOS_API_KEY: this.env.FOGOS_API_KEY ?? "",
     PORTUGAL_MCP_LOG_LEVEL: "INFO",
+    // the container re-downloads the big files in the background, so users never wait for them
+    PORTUGAL_MCP_KEEP_WARM_HOURS: "6",
   };
 }
 
@@ -49,6 +51,14 @@ const SERVERS: Record<string, { binding: (env: Env) => DurableObjectNamespace<Po
 };
 
 export default {
+  // Cron (wrangler.jsonc): a ping every 10 minutes keeps the container awake (it sleeps after 30
+  // idle minutes) and starts it again after a deploy or a host move, so it is always warm.
+  async scheduled(_ctrl: ScheduledController, env: Env, ctx: ExecutionContext): Promise<void> {
+    for (const server of Object.values(SERVERS)) {
+      ctx.waitUntil(getContainer(server.binding(env)).fetch(new Request("http://container/health")).then((r) => r.body?.cancel()));
+    }
+  },
+
   async fetch(req: Request, env: Env): Promise<Response> {
     const url = new URL(req.url);
     const name = url.pathname.replace(/^\/+|\/+$/g, "");

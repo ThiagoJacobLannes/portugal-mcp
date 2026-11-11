@@ -106,6 +106,20 @@ def _run_sync_tools_in_threads(max_parallel: int) -> None:
         tool.fn, tool.is_async = threaded, True
 
 
+def _keep_warm(hours: float) -> None:
+    """Hosted copy: download and parse the big files in the background, now and every few hours,
+    so no user waits minutes for them (the caches trust a file for a day, then re-check it)."""
+    import threading
+
+    def loop() -> None:
+        while True:
+            refresh()
+            time.sleep(hours * 3600)
+
+    threading.Thread(target=loop, name="keep-warm", daemon=True).start()
+    log.info("keep-warm: refreshing the large datasets every %g h", hours)
+
+
 def serve_hosted() -> None:
     """Shared public endpoint (the Cloudflare container): stateless streamable HTTP on 0.0.0.0.
 
@@ -122,6 +136,9 @@ def serve_hosted() -> None:
     s.stateless_http = True
     s.transport_security = TransportSecuritySettings(enable_dns_rebinding_protection=False)
     _run_sync_tools_in_threads(int(os.environ.get("PORTUGAL_MCP_MAX_PARALLEL", "2")))
+    warm = float(os.environ.get("PORTUGAL_MCP_KEEP_WARM_HOURS", "0"))
+    if warm > 0:
+        _keep_warm(warm)
 
     @mcp.custom_route("/health", methods=["GET"])
     async def health(_: Request) -> JSONResponse:

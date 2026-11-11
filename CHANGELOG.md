@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.4.1 — 2026-11-11
+
+- Hosted endpoint stays warm: with `PORTUGAL_MCP_KEEP_WARM_HOURS` set, `--hosted` downloads and parses the large files (Parliament, contracts, EV chargers, timetables) in the background at start and every few hours, and a Worker cron pings the container every 10 minutes so it never sleeps. No user waits minutes for a cold file any more.
+
 ## 0.4.0 — 2026-11-10
 
 - Hosted endpoint: `portugal-mcp --hosted` serves stateless streamable HTTP on `0.0.0.0:8000`, runs the blocking tools in worker threads (at most `PORTUGAL_MCP_MAX_PARALLEL`, default 2) so one slow download doesn't stall other users, and answers `GET /health`. It powers the free public endpoint at `https://mcp.thiagolannes.com/portugal`: a Cloudflare Worker (60 requests a minute per IP) in front of one container (`Dockerfile`, `deploy/cloudflare/`).
