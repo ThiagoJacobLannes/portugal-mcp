@@ -36,6 +36,7 @@ FEATURES = {
     "transit": ".transit",
     "incendios": ".incendios",
     "ocorrencias": ".ocorrencias",
+    "eletricidade": ".eletricidade",
 }
 
 

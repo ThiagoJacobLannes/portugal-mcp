@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.5.0 — 2026-11-11
+
+- Timetables beyond Lisbon: Metro do Porto, TUB (Braga), SMTUC and SIT Metropolitano (Coimbra), Busway (Aveiro region), MobiCascais, TCB (Barreiro), Vamus and Próximo (Algarve), Horários do Funchal and the SIGA network (Madeira), all official GTFS. The transit tools take a city or region as `operator` ("porto", "coimbra", "madeira"...); with none they search CP and Lisbon as before.
+- New `transit_vehicles`: live positions of STCP buses (Porto urban platform), SMTUC buses (AGIT) and Carris buses and trams (GTFS-Realtime, read by a small built-in decoder: no new dependency).
+- When an operator's published timetable has run out, results carry `timetable_valid_until` and a warning instead of silently returning nothing.
+- New `eletricidade` feature: `power_cuts`, the planned interruptions E-REDES announces, by postal code, municipality or parish (CC BY 4.0).
+- Feed freshness checks fall back to a ranged GET when a host refuses HEAD; Madeira stop codes are stripped from stop names so both directions group together (timetable caches rebuild once).
+- Correction: the README said Metro do Porto and STCP publish no feed. Metro do Porto does; STCP's last timetable ended in September 2026.
+
 ## 0.4.0 — 2026-11-10
 
 - Hosted endpoint: `portugal-mcp --hosted` serves stateless streamable HTTP on `0.0.0.0:8000`, runs the blocking tools in worker threads (at most `PORTUGAL_MCP_MAX_PARALLEL`, default 2) so one slow download doesn't stall other users, and answers `GET /health`. It powers the free public endpoint at `https://mcp.thiagolannes.com/portugal`: a Cloudflare Worker (60 requests a minute per IP) in front of one container (`Dockerfile`, `deploy/cloudflare/`).

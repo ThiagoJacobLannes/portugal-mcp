@@ -10,7 +10,7 @@
 
 **Read-only, no API keys, no accounts.** Every answer comes from an official or public open-data source and says which one and for which date. Not affiliated with any of the sources.
 
-*Português:* servidor MCP com os dados públicos de Portugal (IPMA, INE, Banco de Portugal, Parlamento, Portal BASE, dados.gov.pt, SNS, Infarmed, DGEG, MOBI.E, Carris Metropolitana, horários da CP, Metro de Lisboa, Carris e Fertagus, incêndios do EFFIS). Só leitura, sem chaves. As ferramentas aceitam perguntas em português.
+*Português:* servidor MCP com os dados públicos de Portugal (IPMA, INE, Banco de Portugal, Parlamento, Portal BASE, dados.gov.pt, SNS, Infarmed, DGEG, MOBI.E, Carris Metropolitana, horários da CP, de Lisboa, Porto, Coimbra, Braga, Aveiro, Cascais, Barreiro, Algarve e Madeira, autocarros ao vivo no Porto, Coimbra e Lisboa, cortes de luz programados da E-REDES, incêndios do EFFIS, ocorrências da Proteção Civil). Só leitura, sem chaves. As ferramentas aceitam perguntas em português.
 
 ## What it covers
 
@@ -27,11 +27,12 @@
 | `medicamentos` | `medicine_availability`, `pharmacies`, `find_medicine_near`, `medicine_help` | Infarmed public pages, pharmacies on duty |
 | `energia` | `fuel_prices`, `fuel_station_detail`, `fuel_types`, `ev_chargers`, `ev_charger_detail` | [DGEG](https://precoscombustiveis.dgeg.gov.pt), [MOBI.E](https://www.mobie.pt) |
 | `transportes` | `bus_find_stops`, `bus_next_arrivals`, `bus_line_info`, `bus_service_alerts`, `bus_vehicle_positions` | [Carris Metropolitana API](https://github.com/carrismetropolitana/api) |
-| `transit` | `transit_operators`, `transit_find_stops`, `transit_departures`, `transit_trips_between` | Official GTFS timetables of [CP](https://www.cp.pt), [Metro de Lisboa](https://www.metrolisboa.pt), [Carris](https://www.carris.pt) and [Fertagus](https://www.fertagus.pt) |
+| `transit` | `transit_operators`, `transit_find_stops`, `transit_departures`, `transit_trips_between`, `transit_vehicles` (live) | Official GTFS timetables of [CP](https://www.cp.pt), [Metro de Lisboa](https://www.metrolisboa.pt), [Carris](https://www.carris.pt), [Fertagus](https://www.fertagus.pt), [Metro do Porto](https://www.metrodoporto.pt), [TUB](https://www.tub.pt) (Braga), [SMTUC](https://www.smtuc.pt) and SIT (Coimbra), [Busway](https://www.busway.pt) (Aveiro region), [MobiCascais](https://www.mobicascais.pt), [TCB](https://www.tcbarreiro.pt) (Barreiro), [Vamus](https://vamus.pt) and Próximo (Algarve), [Horários do Funchal](https://www.horariosdofunchal.pt) and the SIGA network (Madeira). Live positions: STCP ([Porto urban platform](https://dadosabertos.cm-porto.pt)), SMTUC ([AGIT](https://api.planner.agit.pt)), Carris (GTFS-Realtime) |
 | `incendios` | `wildfires` | [EFFIS](https://forest-fire.emergency.copernicus.eu) (Copernicus, CC BY 4.0) |
 | `ocorrencias` | `active_incidents` (live: what civil protection is responding to near a place, closest first; needs a free personal key in `FOGOS_API_KEY`, police activity is not public) | [ANEPC](https://prociv.gov.pt) via [Fogos.pt](https://fogos.pt) ([request a key](https://source.fogos.pt/api/request-access)) |
+| `eletricidade` | `power_cuts` (planned interruptions by postal code, municipality or parish) | [E-REDES open data](https://e-redes.opendatasoft.com) (CC BY 4.0) |
 
-There are 48 tools in total. If your client struggles with that many, load only what you need with `PORTUGAL_MCP_FEATURES` (see below).
+There are 50 tools in total. If your client struggles with that many, load only what you need with `PORTUGAL_MCP_FEATURES` (see below).
 
 ### Things to know
 
@@ -40,7 +41,9 @@ There are 48 tools in total. If your client struggles with that many, load only 
 - **Parliament:** votes are recorded per parliamentary group, as the Parliament publishes them. The first call downloads about 100 MB (roughly a minute), then it is cached for a day.
 - **Public contracts:** the yearly BASE files are 15-55 MB, so the first query for a year takes a minute or two. Amounts are contract prices without VAT as reported by the buyer. **Tax numbers (NIF) of individual people are hidden**; company and public-body NIFs are shown.
 - **Fuel / EV:** the first EV query loads the national MOBI.E feed (about 80 s), then it is cached.
-- **Timetables are scheduled, not live.** CP, Metro de Lisboa, Carris and Fertagus publish official GTFS timetables; each is loaded into a local SQLite file on first use (Carris takes about 20 s) and refreshed when the operator publishes a new one. `transit_trips_between` finds direct services only (no changes). Metro do Porto and STCP do not publish a current official feed.
+- **Timetables are scheduled, not live.** Each operator's official GTFS timetable is loaded into a local SQLite file on first use (up to about a minute) and refreshed when the operator publishes a new one. Outside Lisbon, name the city or region (`operator="porto"`, `"coimbra"`, `"madeira"`...); without it only CP and the Lisbon operators are searched. When an operator's published timetable has run out, answers carry a warning instead of silently showing nothing. `transit_trips_between` finds direct services only (no changes). STCP (Porto buses) last published a timetable valid until September 2026, so Porto buses have live positions only (`transit_vehicles`); no open feeds were found for Viseu, Évora, Leiria, the Azores or the Tagus ferries.
+- **Live positions** (`transit_vehicles`) are what the vehicles report, usually under a minute old, not arrival predictions.
+- **Power cuts** (`power_cuts`) are the interruptions E-REDES has planned for maintenance, usually for the next two weeks; live faults are not published (call E-REDES, 808 100 100).
 - **Wildfires are satellite-mapped burnt areas** (EFFIS), a day or more after the fact, not live incidents. For today's danger use `fire_risk`; in an emergency call **112**.
 
 ## Install
@@ -53,7 +56,7 @@ A free shared copy runs at **`https://mcp.thiagolannes.com/portugal`** (streamab
 claude mcp add --transport http portugal https://mcp.thiagolannes.com/portugal
 ```
 
-It is rate-limited to 60 requests a minute per IP, and after a quiet spell the first question can take a few seconds (the server wakes up) or a minute or two (if it needs a large file again). For heavy use, run your own copy with `uvx` as below, or `docker build -t portugal-mcp . && docker run -p 8000:8000 portugal-mcp`. The hosted copy is non-commercial and stays that way: its live incidents come from Fogos.pt, whose API terms rule out commercial use.
+It is rate-limited to 60 requests a minute per IP, and after a quiet spell the first question can take a few seconds (the server wakes up) or a minute or two (if it needs a large file again). One known gap: Parliament's site refuses the deputies file to Cloudflare's network, so `parliament_deputies` only works on a local install (search and votes work on both). For heavy use, run your own copy with `uvx` as below, or `docker build -t portugal-mcp . && docker run -p 8000:8000 portugal-mcp`. The hosted copy is non-commercial and stays that way: its live incidents come from Fogos.pt, whose API terms rule out commercial use.
 
 ### Install locally
 
@@ -113,6 +116,8 @@ Any client that runs stdio servers works: command `uvx`, args `["portugal-mcp"]`
 - "Gasóleo mais barato perto de Setúbal" / "Carregadores rápidos perto do Marquês"
 - "Quando passa o próximo autocarro na paragem do Cais do Sodré?"
 - "Comboios diretos de Lisboa Oriente para o Porto amanhã de manhã?" / "Próximo elétrico 28 nos Prazeres?"
+- "Próximo metro na Trindade?" / "Autocarros de Coimbra para a Figueira da Foz hoje" / "Onde estão agora os autocarros da linha 500 no Porto?"
+- "Vai haver corte de luz no 2795-082 nas próximas semanas?"
 - "Quanta área ardeu este ano no Algarve?"
 
 ## Development

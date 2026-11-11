@@ -8,8 +8,10 @@ BASE_INSTRUCTIONS = (
     "Portugal's public data in one server: weather and warnings (IPMA), places and postal codes, "
     "official statistics (INE, Banco de Portugal), Parliament, public contracts, the national "
     "open-data portal, the health service (SNS), medicines and pharmacies, fuel and EV charging, "
-    "Lisbon-area buses, train, metro, bus and tram timetables (CP, Metro de Lisboa, Carris, Fertagus) "
-    "wildfire burnt areas (EFFIS) and live civil-protection incidents (ANEPC). Everything is read-only public data. Answer in the user's language and "
+    "Lisbon-area buses, train, metro, bus and tram timetables (CP, Lisbon, Porto, Coimbra, Braga, "
+    "Aveiro, Cascais, Barreiro, the Algarve, Madeira), live bus positions (Porto, Coimbra, Lisbon), "
+    "planned power cuts (E-REDES), wildfire burnt areas (EFFIS) and live civil-protection incidents "
+    "(ANEPC). Everything is read-only public data. Answer in the user's language and "
     "always say which source and which date or period each figure comes from."
 )
 
