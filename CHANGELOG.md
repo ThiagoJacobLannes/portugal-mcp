@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.6.2 — 2026-11-11
+
+- Hosted endpoint stays warm: with `PORTUGAL_MCP_KEEP_WARM_HOURS` set (6 on the public endpoint), `--hosted` downloads and parses the large files (Parliament, public contracts, EV chargers, every timetable) in a background thread at start and every few hours, rebuilding any file that would expire before the next pass, and warms the Turismo de Portugal map server. A Worker cron pings the container every 10 minutes so it never sleeps (sleeping wiped its disk cache). Questions about contracts, Parliament or EV chargers no longer wait minutes for a cold file.
+- Only one large file is downloaded and parsed at a time in the whole process, whether a user or the background refresh asked for it, so a 1 GiB container can't run out of memory; a second caller waiting for the same file reuses the copy the first one built.
+- `GET /health` reports when the last background refresh ran and how long it took.
+
 ## 0.6.1 — 2026-11-11
 
 - Tourism tools on the hosted endpoint: Turismo de Portugal's name servers sometimes return no address for geo.turismodeportugal.pt (Google's resolver gets one, Cloudflare's sometimes doesn't, and the failure is cached for minutes). For that host only, a failed lookup now falls back to public DNS-over-HTTPS.

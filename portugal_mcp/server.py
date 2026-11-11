@@ -68,14 +68,17 @@ def load(names: list[str]) -> None:
 def refresh() -> None:
     """Download the big open-data files now so the first questions are fast."""
     t0 = time.time()
-    from . import contratos, parlamento, transit
+    from . import contratos, parlamento, transit, turismo
     from .energia import tools as energia
 
+    # One step at a time, so at most one big file is being parsed (see common.HEAVY).
     steps = [
         ("parlamento: initiatives", lambda: parlamento._initiatives(parlamento.CURRENT)),
         ("parlamento: deputies", lambda: parlamento._deputies(parlamento.CURRENT)),
         ("contratos: this year", lambda: contratos._contracts(contratos._year(None))),
         ("energia: EV chargers", energia.refresh),
+        # the AL register is queried on Turismo de Portugal's server; warm its layer and DNS lookup
+        ("turismo: local accommodation", lambda: turismo._layer_meta(turismo.AL_LAYER)),
         *[(f"transit: {op}", lambda op=op: transit._db(op)) for op in transit.OPERATORS],
     ]
     for label, fn in steps:
@@ -86,6 +89,29 @@ def refresh() -> None:
         except Exception:  # noqa: BLE001
             log.exception("%s failed", label)
     log.info("refresh done in %.0fs", time.time() - t0)
+    _warm["last_refresh"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+    _warm["last_refresh_seconds"] = round(time.time() - t0)
+
+
+_warm: dict[str, object] = {}
+
+
+def _keep_warm(hours: float) -> None:
+    """Hosted copy: download and parse the big files in a background thread, now and every few
+    hours. Files due to expire before the next pass are rebuilt early, so no user waits for one."""
+    import threading
+
+    from .common import refreshing_ahead
+
+    def loop() -> None:
+        while True:
+            with refreshing_ahead(hours * 3600 + 1800):
+                refresh()
+            time.sleep(hours * 3600)
+
+    _warm["every_hours"] = hours
+    threading.Thread(target=loop, name="keep-warm", daemon=True).start()
+    log.info("keep-warm: refreshing the large datasets every %g h", hours)
 
 
 def _run_sync_tools_in_threads(max_parallel: int) -> None:
@@ -125,10 +151,13 @@ def serve_hosted() -> None:
     s.stateless_http = True
     s.transport_security = TransportSecuritySettings(enable_dns_rebinding_protection=False)
     _run_sync_tools_in_threads(int(os.environ.get("PORTUGAL_MCP_MAX_PARALLEL", "2")))
+    warm = float(os.environ.get("PORTUGAL_MCP_KEEP_WARM_HOURS", "0"))
+    if warm > 0:
+        _keep_warm(warm)
 
     @mcp.custom_route("/health", methods=["GET"])
     async def health(_: Request) -> JSONResponse:
-        return JSONResponse({"ok": True, "version": __version__})
+        return JSONResponse({"ok": True, "version": __version__, "keep_warm": _warm or None})
 
     mcp.run(transport="streamable-http")
 

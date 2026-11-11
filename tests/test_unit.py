@@ -3,6 +3,7 @@
 import base64
 import io
 import json
+import time
 from datetime import date
 from urllib.parse import parse_qs, urlparse
 
@@ -766,3 +767,63 @@ def test_dns_fallback_only_for_listed_hosts(monkeypatch):
     assert _socket.getaddrinfo("geo.turismodeportugal.pt", 443)[0][4][0] == "127.0.0.1"
     with pytest.raises(_socket.gaierror):
         _socket.getaddrinfo("other.example.pt", 443)
+
+
+def test_keep_warm_refreshes_in_the_background(monkeypatch):
+    import threading
+
+    from portugal_mcp import server
+
+    ran = threading.Event()
+    monkeypatch.setattr(server, "refresh", ran.set)
+    server._keep_warm(6)
+    assert ran.wait(5)
+
+
+def test_heavy_builds_never_overlap_and_are_not_repeated(monkeypatch, tmp_path):
+    import threading
+
+    from portugal_mcp import common
+
+    monkeypatch.setenv("PORTUGAL_MCP_CACHE_DIR", str(tmp_path))
+    monkeypatch.setattr(common.FileCache, "_remote_modified", lambda self, url: None)
+    running, peak, builds = [0], [0], []
+    gate = threading.Lock()
+
+    def build(url):
+        with gate:
+            running[0] += 1
+            peak[0] = max(peak[0], running[0])
+        time.sleep(0.2)
+        builds.append(url)
+        with gate:
+            running[0] -= 1
+        return [1]
+
+    def call(name):
+        common.FileCache("t", name, f"https://x/{name}", heavy=True).get(build)
+
+    threads = [threading.Thread(target=call, args=(n,)) for n in ("a", "a", "b")]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    assert peak[0] == 1  # one big build at a time
+    assert sorted(builds) == ["https://x/a", "https://x/b"]  # the second "a" reused the first
+
+
+def test_background_refresh_rebuilds_before_expiry(monkeypatch, tmp_path):
+    from portugal_mcp import common
+
+    monkeypatch.setenv("PORTUGAL_MCP_CACHE_DIR", str(tmp_path))
+    monkeypatch.setattr(common.FileCache, "_remote_modified", lambda self, url: None)
+    builds = []
+    common.FileCache("t", "c", "https://x/c", ttl=3600).get(lambda u: builds.append(u) or [1])
+    common.FileCache("t", "c", "https://x/c", ttl=3600).get(lambda u: builds.append(u) or [1])
+    assert len(builds) == 1  # fresh for users
+    with common.refreshing_ahead(3000):
+        common.FileCache("t", "c", "https://x/c", ttl=3600).get(lambda u: builds.append(u) or [1])
+    assert len(builds) == 1  # an hour left, 50 min ahead: still fresh
+    with common.refreshing_ahead(3700):
+        common.FileCache("t", "c", "https://x/c", ttl=3600).get(lambda u: builds.append(u) or [1])
+    assert len(builds) == 2  # would expire before the next pass: rebuilt now

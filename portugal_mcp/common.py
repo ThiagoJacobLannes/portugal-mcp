@@ -9,9 +9,11 @@ import math
 import os
 import re
 import socket
+import threading
 import time
 import unicodedata
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 from email.utils import parsedate_to_datetime
 from pathlib import Path
 from typing import Any
@@ -34,6 +36,30 @@ def cache_dir(feature: str) -> Path:
     d = Path(base) / feature
     d.mkdir(parents=True, exist_ok=True)
     return d
+
+
+# The big files (contracts, Parliament, EV chargers, timetables) peak at ~500 MB each while they are
+# downloaded and parsed. Only one such build runs at a time in the whole process, whether a user or
+# the hosted copy's background refresh started it, so a 1 GiB container can't run out of memory.
+HEAVY = threading.Lock()
+
+_ahead = threading.local()
+
+
+@contextmanager
+def refreshing_ahead(seconds: float) -> Iterator[None]:
+    """Inside this block (the background refresh thread only), caches count as stale `seconds`
+    before they expire, so they are rebuilt in the background before any user finds them stale."""
+    _ahead.seconds = seconds
+    try:
+        yield
+    finally:
+        _ahead.seconds = 0.0
+
+
+def fresh_for(ttl: float) -> float:
+    """The TTL a cache should apply right now: shorter in the background refresh thread."""
+    return ttl - getattr(_ahead, "seconds", 0.0)
 
 
 _http: httpx.Client | None = None
@@ -82,10 +108,11 @@ class FileCache:
     unchanged upstream file is not downloaded again.
     """
 
-    def __init__(self, feature: str, name: str, url: str | Callable[[], str], ttl: float = 86400):
+    def __init__(self, feature: str, name: str, url: str | Callable[[], str], ttl: float = 86400, heavy: bool = False):
         self.path = cache_dir(feature) / f"{name}.json.gz"
         self.url = url
         self.ttl = ttl
+        self.heavy = heavy
         self._mem: Any = None
 
     def _url(self) -> str:
@@ -119,12 +146,19 @@ class FileCache:
 
         `build(url)` downloads and parses the source into JSON-able data.
         """
-        if self._mem is not None and not force and time.time() - self._mem["_t"] < self.ttl:
+        ttl = fresh_for(self.ttl)
+        if self._mem is not None and not force and time.time() - self._mem["_t"] < ttl:
             return self._mem
+        if self.heavy:
+            with HEAVY:  # one big build at a time; whoever waited finds the file another thread built
+                return self._get(build, force, ttl)
+        return self._get(build, force, ttl)
+
+    def _get(self, build: Callable[[str], Any], force: bool, ttl: float) -> dict[str, Any]:
         doc = None if force else self._read()
         url = self._url()
         if doc and doc.get("url") == url:
-            fresh = time.time() - doc["_t"] < self.ttl
+            fresh = time.time() - doc["_t"] < ttl
             if not fresh:
                 mod = self._remote_modified(url)
                 if mod and mod == doc.get("source_modified"):

@@ -108,7 +108,7 @@ def _contracts(year: int) -> list[dict[str, Any]]:
             dest.unlink(missing_ok=True)
 
     ttl = 86400 if year >= date.today().year - 1 else 30 * 86400
-    return FileCache("contratos", f"contratos-{year}", lambda: _resource_url(year), ttl=ttl).get(build)["data"]
+    return FileCache("contratos", f"contratos-{year}", lambda: _resource_url(year), ttl=ttl, heavy=True).get(build)["data"]
 
 
 def _year(year: int | None) -> int:

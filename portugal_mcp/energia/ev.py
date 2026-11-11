@@ -31,6 +31,7 @@ from typing import Any
 
 import httpx
 
+from ..common import HEAVY, fresh_for
 from ..common import cache_dir as shared_cache_dir
 from .common import USER_AGENT, haversine_km, norm
 
@@ -388,23 +389,24 @@ class EVData:
         path = cache_dir() / "mobie_static.json.gz"
         if self.static is None:
             self.static = _read_json(path)
-        if self._fresh(self.static, STATIC_TTL):
+        if self._fresh(self.static, fresh_for(STATIC_TTL)):
             return
         log.info("refreshing MOBI.E static inventory (first run can take 1-3 minutes)")
         if progress:
             progress("Downloading the MOBI.E charger inventory (~180 MB, first run only per day)", 0.0)
         sites: list[dict[str, Any]] = []
         try:
-            pub, etag, not_mod = _stream_parse(
-                STATIC_URLS,
-                "energyInfrastructureSite",
-                lambda el: sites.append(_parse_site(el)),
-                None,
-                "static inventory",
-                progress,
-                etag=(self.static or {}).get("etag"),
-                reset=sites.clear,
-            )
+            with HEAVY:  # one big build at a time (common.HEAVY)
+                pub, etag, not_mod = _stream_parse(
+                    STATIC_URLS,
+                    "energyInfrastructureSite",
+                    lambda el: sites.append(_parse_site(el)),
+                    None,
+                    "static inventory",
+                    progress,
+                    etag=(self.static or {}).get("etag"),
+                    reset=sites.clear,
+                )
         except Exception as exc:  # noqa: BLE001
             if self.static:
                 self.warnings.append(f"Could not refresh the charger inventory ({exc}); using the cached copy.")

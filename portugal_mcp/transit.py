@@ -21,7 +21,7 @@ from typing import Any
 from zoneinfo import ZoneInfo
 
 from .app import mcp, note
-from .common import cache_dir, clamp, download, fail, haversine_km, http, norm
+from .common import HEAVY, cache_dir, clamp, download, fail, fresh_for, haversine_km, http, norm
 
 log = logging.getLogger("portugal_mcp.transit")
 
@@ -312,7 +312,7 @@ def _db(op: str) -> sqlite3.Connection:
                 con = None
         stale = (
             not meta
-            or time.time() - float(meta.get("checked", 0)) > CHECK_EVERY
+            or time.time() - float(meta.get("checked", 0)) > fresh_for(CHECK_EVERY)
             or not meta.get("fingerprint", "").startswith(f"{BUILD_VERSION}|")
         )
         if stale:
@@ -324,15 +324,16 @@ def _db(op: str) -> sqlite3.Connection:
                 con.commit()
             else:
                 try:
-                    zpath = d / f"{op}.zip.download"
-                    log.info("downloading %s timetable", op)
-                    download(url, zpath)
-                    if con is not None:
-                        con.close()
-                        con = None
-                        _conns.pop(op, None)
-                    _build(op, str(zpath), db_path, fp or f"{BUILD_VERSION}|t:{int(time.time())}")
-                    zpath.unlink(missing_ok=True)
+                    with HEAVY:  # one big build at a time (common.HEAVY)
+                        zpath = d / f"{op}.zip.download"
+                        log.info("downloading %s timetable", op)
+                        download(url, zpath)
+                        if con is not None:
+                            con.close()
+                            con = None
+                            _conns.pop(op, None)
+                        _build(op, str(zpath), db_path, fp or f"{BUILD_VERSION}|t:{int(time.time())}")
+                        zpath.unlink(missing_ok=True)
                 except Exception:
                     if not meta:
                         raise

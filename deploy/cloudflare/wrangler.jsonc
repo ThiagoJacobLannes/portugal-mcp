@@ -7,6 +7,8 @@
   "main": "src/index.ts",
   "compatibility_date": "2026-11-01",
   "observability": { "enabled": true },
+  // keep the container awake and warm (about $7 a month for the always-on memory and disk)
+  "triggers": { "crons": ["*/10 * * * *"] },
   "routes": [{ "pattern": "mcp.thiagolannes.com", "custom_domain": true }],
   "containers": [
     {

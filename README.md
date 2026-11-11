@@ -62,7 +62,7 @@ A free shared copy runs at **`https://mcp.thiagolannes.com/portugal`** (streamab
 claude mcp add --transport http portugal https://mcp.thiagolannes.com/portugal
 ```
 
-It is rate-limited to 60 requests a minute per IP, and after a quiet spell the first question can take a few seconds (the server wakes up) or a minute or two (if it needs a large file again). One known gap: Parliament's site refuses the deputies file to Cloudflare's network, so `parliament_deputies` only works on a local install (search and votes work on both). For heavy use, run your own copy with `uvx` as below, or `docker build -t portugal-mcp . && docker run -p 8000:8000 portugal-mcp`. The hosted copy is non-commercial and stays that way: its live incidents come from Fogos.pt, whose API terms rule out commercial use.
+It is rate-limited to 60 requests a minute per IP, and it stays awake and refreshes the large files (contracts, Parliament, EV chargers, timetables) in the background before they expire, so answers come in seconds. Only in the first few minutes after a new deploy can a question about one of those files take a minute or two. One known gap: Parliament's site refuses the deputies file to Cloudflare's network, so `parliament_deputies` only works on a local install (search and votes work on both). For heavy use, run your own copy with `uvx` as below, or `docker build -t portugal-mcp . && docker run -p 8000:8000 portugal-mcp`. The hosted copy is non-commercial and stays that way: its live incidents come from Fogos.pt, whose API terms rule out commercial use.
 
 ### Install locally
 
@@ -107,6 +107,7 @@ Any client that runs stdio servers works: command `uvx`, args `["portugal-mcp"]`
 | `PORTUGAL_MCP_CACHE_DIR` | OS cache dir | Where downloaded files are cached. |
 | `PORTUGAL_MCP_LOG_LEVEL` | `INFO` | Log level; logs go to stderr. |
 | `PORTUGAL_MCP_MAX_PARALLEL` | `2` | `--hosted` only: how many tool calls run at once. |
+| `PORTUGAL_MCP_KEEP_WARM_HOURS` | `0` (off) | `--hosted` only: download and parse the large files in the background at start and every N hours, one at a time, rebuilding any that would expire before the next pass. |
 
 `portugal-mcp --refresh` downloads the large files ahead of time (Parliament, this year's contracts, EV chargers, timetables) and then exits.
 
