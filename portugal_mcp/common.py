@@ -7,12 +7,18 @@ import json
 import logging
 import math
 import os
+import re
+import socket
+import threading
 import time
 import unicodedata
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 from email.utils import parsedate_to_datetime
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlencode
+from urllib.request import urlopen
 
 import httpx
 from platformdirs import user_cache_dir
@@ -30,6 +36,31 @@ def cache_dir(feature: str) -> Path:
     d = Path(base) / feature
     d.mkdir(parents=True, exist_ok=True)
     return d
+
+
+# The big files (public contracts, Parliament initiatives: see BigFileCache) peak at ~500 MB while
+# they are parsed. Only one is built or loaded at a time in the whole process, whether a user or the
+# hosted copy's background refresh asked for it, so a 1 GiB container can't run out of memory.
+# (Timetables and the EV inventory are streamed and stay small, so they don't wait for this.)
+HEAVY = threading.Lock()
+
+_ahead = threading.local()
+
+
+@contextmanager
+def refreshing_ahead(seconds: float) -> Iterator[None]:
+    """Inside this block (the background refresh thread only), caches count as stale `seconds`
+    before they expire, so they are rebuilt in the background before any user finds them stale."""
+    _ahead.seconds = seconds
+    try:
+        yield
+    finally:
+        _ahead.seconds = 0.0
+
+
+def fresh_for(ttl: float) -> float:
+    """The TTL a cache should apply right now: shorter in the background refresh thread."""
+    return ttl - getattr(_ahead, "seconds", 0.0)
 
 
 _http: httpx.Client | None = None
@@ -115,12 +146,16 @@ class FileCache:
 
         `build(url)` downloads and parses the source into JSON-able data.
         """
-        if self._mem is not None and not force and time.time() - self._mem["_t"] < self.ttl:
+        ttl = fresh_for(self.ttl)
+        if self._mem is not None and not force and time.time() - self._mem["_t"] < ttl:
             return self._mem
+        return self._get(build, force, ttl)
+
+    def _get(self, build: Callable[[str], Any], force: bool, ttl: float) -> dict[str, Any]:
         doc = None if force else self._read()
         url = self._url()
         if doc and doc.get("url") == url:
-            fresh = time.time() - doc["_t"] < self.ttl
+            fresh = time.time() - doc["_t"] < ttl
             if not fresh:
                 mod = self._remote_modified(url)
                 if mod and mod == doc.get("source_modified"):
@@ -150,6 +185,102 @@ class FileCache:
         self._write(doc)
         self._mem = doc
         return doc
+
+
+class BigFileCache:
+    """A large downloaded-and-parsed list of rows (public contracts, Parliament initiatives).
+
+    Unlike FileCache, the process keeps ONE parsed copy in memory, shared by every call: re-reading
+    a 120 MB file per call peaked at ~1 GB, too much for the hosted copy's 1 GiB. On disk the
+    metadata sits in its own small file, so freshness checks never touch the data, and the rows are
+    one JSON object per line, so loading never holds the whole text and the parsed rows together.
+    Loads and builds run one at a time in the process (HEAVY), and an outdated copy is dropped from
+    memory before its replacement is built, so the two never coexist.
+    """
+
+    _mem: dict[Path, dict[str, Any]] = {}
+    _remote_modified = FileCache._remote_modified
+
+    def __init__(self, feature: str, name: str, url: str | Callable[[], str], ttl: float = 86400):
+        d = cache_dir(feature)
+        self.data_path = d / f"{name}.jsonl.gz"
+        self.meta_path = d / f"{name}.meta.json"
+        self.url = url
+        self.ttl = ttl
+
+    def _meta(self) -> dict[str, Any] | None:
+        try:
+            meta = json.loads(self.meta_path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return None
+        return meta if self.data_path.exists() else None
+
+    def _save_meta(self, meta: dict[str, Any]) -> None:
+        tmp = self.meta_path.with_suffix(".tmp")
+        tmp.write_text(json.dumps(meta), encoding="utf-8")
+        os.replace(tmp, self.meta_path)
+
+    def _load(self, meta: dict[str, Any]) -> dict[str, Any]:
+        with gzip.open(self.data_path, "rt", encoding="utf-8") as f:
+            rows = [json.loads(line) for line in f]
+        return {**meta, "data": rows}
+
+    def _save(self, rows: list[Any], meta: dict[str, Any]) -> None:
+        tmp = self.data_path.with_suffix(".tmp")
+        with gzip.open(tmp, "wt", encoding="utf-8") as f:
+            for r in rows:
+                f.write(json.dumps(r, ensure_ascii=False, separators=(",", ":")))
+                f.write("\n")
+        os.replace(tmp, self.data_path)
+        self._save_meta(meta)
+
+    def get(self, build: Callable[[str], list[Any]]) -> dict[str, Any]:
+        """Return {"data": rows, "fetched_at": iso, "source_modified": str|None[, "stale": True]}."""
+        ttl = fresh_for(self.ttl)
+        doc = self._mem.get(self.data_path)
+        if doc is not None and time.time() - doc["_t"] < ttl:
+            return doc
+        with HEAVY:
+            doc = self._mem.get(self.data_path)
+            if doc is not None and time.time() - doc["_t"] < ttl:
+                return doc  # another thread just loaded or refreshed it
+            url = self.url() if callable(self.url) else self.url
+            meta = self._meta()
+            if meta and meta.get("url") == url:
+                fresh = time.time() - meta["_t"] < ttl
+                mod = None if fresh else self._remote_modified(url)
+                if fresh or (mod and mod == meta.get("source_modified")):
+                    if not fresh:
+                        meta["_t"] = time.time()
+                        self._save_meta(meta)
+                    if doc is not None:  # unchanged upstream: keep the copy in memory
+                        doc.update(_t=meta["_t"])
+                        return doc
+                    doc = self._load(meta)
+                    self._mem[self.data_path] = doc
+                    return doc
+            self._mem.pop(self.data_path, None)  # free the old copy before building the new one
+            del doc
+            try:
+                mod = self._remote_modified(url)
+                rows = build(url)
+            except Exception:
+                if meta:  # serve the copy on disk rather than fail
+                    log.warning("refresh of %s failed; serving cached copy", self.data_path.name, exc_info=True)
+                    doc = {**self._load(meta), "stale": True}
+                    self._mem[self.data_path] = doc
+                    return doc
+                raise
+            meta = {
+                "url": url,
+                "_t": time.time(),
+                "fetched_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                "source_modified": mod,
+            }
+            self._save(rows, meta)
+            doc = {**meta, "data": rows}
+            self._mem[self.data_path] = doc
+            return doc
 
 
 def http_date(value: str | None) -> str | None:
@@ -257,3 +388,46 @@ def download(url: str, dest: Path, *, timeout: float = 600) -> Path:
                 f.write(block)
     os.replace(tmp, dest)
     return dest
+
+
+def like_pattern(text: str) -> str:
+    """An ArcGIS/SQL LIKE pattern for UPPER(field) that ignores accents and case: vowels and 'c'
+    become single-character wildcards ("São Vicente" also matches "SAO VICENTE")."""
+    t = re.sub(r"[^a-z0-9 ]", " ", norm(text)).upper()
+    return "%" + "%".join(re.sub(r"[AEIOUC]", "_", w) for w in t.split()) + "%"
+
+
+# Some public-data hosts have inconsistent DNS (their name servers sometimes answer with no address,
+# so a resolver caches "no such host" for minutes). For these hosts only, when the system resolver
+# fails, ask a public DNS-over-HTTPS resolver instead. This works around broken DNS, not access rules.
+DNS_FALLBACK_HOSTS = {"geo.turismodeportugal.pt"}
+_orig_getaddrinfo = socket.getaddrinfo
+_doh_cache: dict[str, tuple[float, list[str]]] = {}
+
+
+def _doh_lookup(host: str) -> list[str]:
+    hit = _doh_cache.get(host)
+    if hit and time.time() - hit[0] < 600:
+        return hit[1]
+    url = "https://dns.google/resolve?" + urlencode({"name": host, "type": "A"})
+    with urlopen(url, timeout=10) as r:  # noqa: S310 — fixed https URL
+        data = json.load(r)
+    ips = [a["data"] for a in data.get("Answer", []) if a.get("type") == 1]
+    _doh_cache[host] = (time.time(), ips)
+    return ips
+
+
+def _getaddrinfo(host, *args, **kwargs):  # type: ignore[no-untyped-def]
+    try:
+        return _orig_getaddrinfo(host, *args, **kwargs)
+    except socket.gaierror:
+        if host not in DNS_FALLBACK_HOSTS:
+            raise
+        ips = _doh_lookup(host)
+        if not ips:
+            raise
+        log.warning("system DNS failed for %s; using public DNS-over-HTTPS (%s)", host, ips[0])
+        return _orig_getaddrinfo(ips[0], *args, **kwargs)
+
+
+socket.getaddrinfo = _getaddrinfo

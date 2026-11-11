@@ -3,6 +3,7 @@
 import base64
 import io
 import json
+import time
 from datetime import date
 from urllib.parse import parse_qs, urlparse
 
@@ -485,6 +486,144 @@ def test_power_cuts_groups_and_matches(monkeypatch):
     assert "error" in eletricidade.power_cuts(postal_code="27950")
 
 
+def test_like_pattern_ignores_accents():
+    from portugal_mcp.common import like_pattern
+
+    assert like_pattern("São Vicente") == like_pattern("sao vicente") == "%S__%V___NT_%"
+
+
+def test_transit_lisbon_synonym_and_station_fallback(tmp_path):
+    import sqlite3
+    import zipfile as zf
+
+    from portugal_mcp import transit
+
+    zp, db = tmp_path / "f.zip", tmp_path / "f.sqlite"
+    with zf.ZipFile(zp, "w") as z:
+        z.writestr("stops.txt", "stop_id,stop_name,stop_lat,stop_lon\nL,Lisbon (Oriente),38.77,-9.10\nPA,Porto (Airport),41.24,-8.67\nPC,Porto (Campanha),41.15,-8.59\n")
+        z.writestr("routes.txt", "route_id,route_short_name,route_long_name,route_type\nR,N1,FlixBus N1,3\n")
+        z.writestr("trips.txt", "route_id,service_id,trip_id\nR,S,T\n")
+        z.writestr("stop_times.txt", "trip_id,arrival_time,departure_time,stop_id,stop_sequence\nT,01:30:00,01:30:00,L,1\nT,05:00:00,05:00:00,PC,2\n")
+        z.writestr("calendar.txt", "service_id,monday,tuesday,wednesday,thursday,friday,saturday,sunday,start_date,end_date\nS,1,1,1,1,1,1,1,20260101,20271231\n")
+    transit._build("flixbus", str(zp), str(db), "fp")
+    con = sqlite3.connect(db, check_same_thread=False)
+    con.row_factory = sqlite3.Row
+    assert transit._stations(con, "Lisboa")[0]["name"] == "Lisbon (Oriente)"
+    import pytest as _pt
+
+    mp = _pt.MonkeyPatch()
+    mp.setattr(transit, "_db", lambda op: con)
+    try:
+        r = transit.transit_trips_between("Lisboa", "Porto", operator="flixbus", when="2026-11-12T00:00", window_minutes=600)
+    finally:
+        mp.undo()
+    res = r["results"][0]
+    assert res["to"] == "Porto (Campanha)" and res["trips"][0]["depart"] == "01:30"
+    assert "ODbL" in res["attribution"]
+
+
+def test_electricity_price_parses_and_falls_back(monkeypatch):
+    from datetime import date
+
+    from portugal_mcp import eletricidade
+
+    text = "MARGINALPDBCPT;\n" + "".join(f"2026;11;09;{p};{100 + p};{100 + p};\n" for p in range(1, 97)) + "*\n"
+
+    class Resp:
+        status_code = 200
+
+        def __init__(self, t):
+            self.text = t
+
+        def raise_for_status(self):
+            pass
+
+    calls = []
+
+    def get(url, params=None, timeout=None):
+        calls.append(params.get("filename"))
+        if params.get("filename", "").endswith("20261109.1"):
+            return Resp(text)
+        r = Resp("<html>not found</html>")
+        r.status_code = 404
+        return r
+
+    monkeypatch.setattr(eletricidade, "http", lambda: type("C", (), {"get": staticmethod(get)})())
+    monkeypatch.setattr(eletricidade, "_latest_published", lambda: date(2026, 11, 9))
+    eletricidade._prices.clear()
+    r = eletricidade.electricity_price("2026-11-12", cheapest=2)
+    assert r["day"] == "2026-11-09" and "not published" in r["note"]
+    assert len(r["periods"]) == 96 and r["periods"][1] == {"from": "00:15", "eur_mwh": 102.0}
+    c = r["computed_from_omie_values"]
+    assert c["min"] == 101.0 and c["max"] == 196.0 and [x["from"] for x in c["cheapest"]] == ["00:00", "00:15"]
+    assert "OMIE" in r["source"]
+
+
+# --- tourism (Turismo de Portugal) -------------------------------------------------------
+
+
+def test_turismo_clean_drops_owners_and_maps_codes(monkeypatch):
+    from portugal_mcp import turismo
+
+    monkeypatch.setattr(turismo, "_muni_names", lambda: {"1105": "Cascais"})
+    feat = {
+        "attributes": {"OBJECTID": 1, "Denominação": "Carcavelos", "DICO": 1105, "EntProprietaria": "Maria Silva",
+                       "EntExploradora": "Joao Lda", "DataRegisto": -86400000,
+                       "Website": '<a href="https://example.pt/x" target="_top">site</a>', "Email": " "},
+        "geometry": {"x": -9.335, "y": 38.6797},
+    }
+    r = turismo._clean(feat, {"DataRegisto"})
+    assert r["Concelho"] == "Cascais" and "DICO" not in r
+    assert "EntProprietaria" not in r and "EntExploradora" not in r and "Email" not in r
+    assert r["DataRegisto"] == "1969-12-31"  # pre-1970 dates work on Windows too
+    assert r["Website"] == "https://example.pt/x" and (r["lat"], r["lon"]) == (38.6797, -9.335)
+
+
+def test_tourism_places_filters_small_layers(monkeypatch):
+    from portugal_mcp import turismo
+
+    rows = [
+        {"Denominação": "Carcavelos", "Concelho": "Cascais", "lat": 38.6797, "lon": -9.335, "_pts": [(38.6797, -9.335)]},
+        {"Denominação": "Nazaré", "Concelho": "Nazaré", "lat": 39.6, "lon": -9.07, "_pts": [(39.6, -9.07)]},
+    ]
+    monkeypatch.setattr(turismo, "_small", lambda kind: rows)
+    assert [p["Denominação"] for p in turismo.tourism_places("beaches", place="cascais")["places"]] == ["Carcavelos"]
+    near = turismo.tourism_places("praias", lat=39.6, lon=-9.07, radius_km=5)
+    assert near["found"] == 1 and near["places"][0]["distance_km"] == 0
+    assert "error" in turismo.tourism_places("castles")
+
+
+def test_local_accommodation_needs_a_filter():
+    from portugal_mcp import turismo
+
+    assert "error" in turismo.local_accommodation()
+    assert "error" in turismo.local_accommodation(registration="AL")
+
+
+# --- Lisbon --------------------------------------------------------------------------------
+
+
+def test_lisbon_events_filters(monkeypatch):
+    from portugal_mcp import lisboa
+
+    events = [
+        {"title": {"rendered": "Fado no Castelo"}, "occurences": ["2026-11-14"], "categories_name_list": {"m": {"name": "música"}},
+         "venue": {"v": {"name": "Castelo de S. Jorge"}}, "price_cat": "free", "price_val": "", "link": "https://x/1"},
+        {"title": {"rendered": "Expo &amp; Arte"}, "occurences": [], "StartDate": "2026-11-01", "LastDate": "2026-12-31",
+         "categories_name_list": {"a": {"name": "exposições"}}, "price_cat": "value",
+         "price_val": 'a:1:{i:0;a:1:{s:5:"value";s:1:"5";}}', "link": "https://x/2"},
+        {"title": {"rendered": "Old"}, "occurences": ["2026-10-01"], "link": "https://x/3"},
+    ]
+    monkeypatch.setattr(lisboa, "_all_events", lambda: events)
+    r = lisboa.lisbon_events(day="2026-11-14")
+    assert [e["title"] for e in r["events"]] == ["Fado no Castelo", "Expo & Arte"]
+    assert r["events"][1]["price"] == "€5" and r["events"][0]["price"] == "free"
+    assert [e["title"] for e in lisboa.lisbon_events(day="2026-11-14", free_only=True)["events"]] == ["Fado no Castelo"]
+    assert [e["title"] for e in lisboa.lisbon_events(day="2026-11-14", query="fado")["events"]] == ["Fado no Castelo"]
+    assert lisboa.lisbon_events(day="2026-11-14", category="exposicoes")["found"] == 1
+    assert "error" in lisboa.lisbon_events(day="2026-11-14", until="2027-02-01")
+
+
 # --- wildfires (EFFIS) ----------------------------------------------------------------
 
 EFFIS_SAMPLE = b"""<?xml version='1.0' encoding="UTF-8" ?>
@@ -609,3 +748,137 @@ def test_hosted_mode_moves_sync_tools_to_threads():
 
     out = anyio.run(go)
     assert "2026-12-25" in json.dumps(out, default=str)
+
+
+def test_dns_fallback_only_for_listed_hosts(monkeypatch):
+    import socket as _socket
+
+    from portugal_mcp import common
+
+    real = common._orig_getaddrinfo
+
+    def broken(host, *a, **k):
+        if host in ("geo.turismodeportugal.pt", "other.example.pt"):
+            raise _socket.gaierror(-5, "No address associated with hostname")
+        return real(host, *a, **k)
+
+    monkeypatch.setattr(common, "_orig_getaddrinfo", broken)
+    monkeypatch.setattr(common, "_doh_lookup", lambda host: ["127.0.0.1"])
+    assert _socket.getaddrinfo("geo.turismodeportugal.pt", 443)[0][4][0] == "127.0.0.1"
+    with pytest.raises(_socket.gaierror):
+        _socket.getaddrinfo("other.example.pt", 443)
+
+
+def test_keep_warm_refreshes_in_the_background(monkeypatch):
+    import threading
+
+    from portugal_mcp import server
+
+    ran = threading.Event()
+    monkeypatch.setattr(server, "refresh", ran.set)
+    server._keep_warm(6)
+    assert ran.wait(5)
+
+
+@pytest.fixture
+def big_cache(monkeypatch, tmp_path):
+    from portugal_mcp import common
+
+    monkeypatch.setenv("PORTUGAL_MCP_CACHE_DIR", str(tmp_path))
+    monkeypatch.setattr(common.BigFileCache, "_mem", {})
+    monkeypatch.setattr(common.BigFileCache, "_remote_modified", lambda self, url: "v1")
+    return common
+
+
+def test_big_files_build_one_at_a_time_and_once(big_cache):
+    import threading
+
+    running, peak, builds = [0], [0], []
+    gate = threading.Lock()
+
+    def build(url):
+        with gate:
+            running[0] += 1
+            peak[0] = max(peak[0], running[0])
+        time.sleep(0.2)
+        builds.append(url)
+        with gate:
+            running[0] -= 1
+        return [{"n": 1}]
+
+    def call(name):
+        big_cache.BigFileCache("t", name, f"https://x/{name}").get(build)
+
+    threads = [threading.Thread(target=call, args=(n,)) for n in ("a", "a", "b")]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    assert peak[0] == 1  # one big build at a time
+    assert sorted(builds) == ["https://x/a", "https://x/b"]  # the second "a" reused the first
+
+
+def test_big_files_keep_one_shared_copy_and_reload_from_disk(big_cache):
+    c = big_cache.BigFileCache
+    a = c("t", "big", "https://x/big").get(lambda u: [{"n": 1}, {"n": "é"}])
+    b = c("t", "big", "https://x/big").get(lambda u: [{"n": 9}])
+    assert a is b  # same parsed copy: no re-parse, no second copy in memory
+    c._mem.clear()  # a restart: rows come back from disk without building
+    again = c("t", "big", "https://x/big").get(lambda u: [{"n": 9}])
+    assert again["data"] == [{"n": 1}, {"n": "é"}]
+
+
+def test_background_refresh_rebuilds_big_files_before_expiry(big_cache, monkeypatch):
+    c = big_cache.BigFileCache
+    builds = []
+    c("t", "c", "https://x/c", ttl=3600).get(lambda u: builds.append(u) or [1])
+    with big_cache.refreshing_ahead(3000):
+        c("t", "c", "https://x/c", ttl=3600).get(lambda u: builds.append(u) or [2])
+    assert len(builds) == 1  # an hour left, 50 min ahead: still fresh
+    with big_cache.refreshing_ahead(3700):
+        doc = c("t", "c", "https://x/c", ttl=3600).get(lambda u: builds.append(u) or [2])
+    assert len(builds) == 1 and doc["data"] == [1]  # upstream unchanged: kept, no download
+    monkeypatch.setattr(big_cache.BigFileCache, "_remote_modified", lambda self, url: "v2")
+    with big_cache.refreshing_ahead(3700):
+        doc = c("t", "c", "https://x/c", ttl=3600).get(lambda u: builds.append(u) or [2])
+    assert len(builds) == 2 and doc["data"] == [2]  # changed upstream: rebuilt now, not at expiry
+
+
+def test_big_file_build_failure_serves_the_copy_on_disk(big_cache, monkeypatch):
+    c = big_cache.BigFileCache
+    c("t", "s", "https://x/s", ttl=0).get(lambda u: [1])
+    monkeypatch.setattr(big_cache.BigFileCache, "_remote_modified", lambda self, url: "v2")
+
+    def broken(url):
+        raise RuntimeError("down")
+
+    doc = c("t", "s", "https://x/s", ttl=0).get(broken)
+    assert doc["data"] == [1] and doc["stale"] is True
+
+
+def test_ev_status_served_from_cache_while_refreshing(monkeypatch):
+    import threading
+
+    from portugal_mcp.energia import ev
+
+    d = ev.EVData()
+    d.static = {"fetched_epoch": time.time(), "sites": []}
+    d.status = {"fetched_epoch": time.time() - 20 * 60, "points": {}}  # 20 min old: past the 10-min TTL
+    started, release = threading.Event(), threading.Event()
+
+    def slow_load(progress):
+        started.set()
+        release.wait(5)
+        d.status = {"fetched_epoch": time.time(), "points": {"x": 1}}
+
+    monkeypatch.setattr(d, "_load_status", slow_load)
+    t = time.time()
+    d.ensure()
+    assert time.time() - t < 1 and started.wait(2)  # answered at once, refresh running behind
+    d.ensure()  # a second caller while the refresh runs: not blocked, no second download
+    release.set()
+    for _ in range(50):
+        if not d._status_refreshing:
+            break
+        time.sleep(0.05)
+    assert d.status["points"] == {"x": 1}

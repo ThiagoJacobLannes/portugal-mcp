@@ -7,6 +7,8 @@
   "main": "src/index.ts",
   "compatibility_date": "2026-11-01",
   "observability": { "enabled": true },
+  // keep the container awake and warm (about $7 a month for the always-on memory and disk)
+  "triggers": { "crons": ["*/10 * * * *"] },
   "routes": [{ "pattern": "mcp.thiagolannes.com", "custom_domain": true }],
   "containers": [
     {
@@ -23,6 +25,10 @@
     "bindings": [{ "name": "PORTUGAL_MCP", "class_name": "PortugalMcp" }]
   },
   "migrations": [{ "tag": "v1", "new_sqlite_classes": ["PortugalMcp"] }],
-  // per client IP; period must be 10 or 60 seconds
-  "ratelimits": [{ "name": "LIMITER", "namespace_id": "1001", "simple": { "limit": 60, "period": 60 } }]
+  // per client IP; period must be 10 or 60 seconds. Claude's custom connectors all arrive from
+  // Anthropic's outbound addresses, so those get a larger budget (src/index.ts, CONNECTOR_RANGES).
+  "ratelimits": [
+    { "name": "LIMITER", "namespace_id": "1001", "simple": { "limit": 60, "period": 60 } },
+    { "name": "LIMITER_CONNECTORS", "namespace_id": "1002", "simple": { "limit": 600, "period": 60 } }
+  ]
 }

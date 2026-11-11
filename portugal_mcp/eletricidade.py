@@ -1,4 +1,5 @@
-"""Electricity: planned power cuts from E-REDES, the distribution network operator (open data)."""
+"""Electricity: planned power cuts from E-REDES (open data) and the Portuguese day-ahead market
+price from OMIE, the Iberian market operator (free use with attribution, unaltered)."""
 
 from __future__ import annotations
 
@@ -6,12 +7,12 @@ import logging
 import re
 import threading
 import time
-from datetime import datetime
+from datetime import date, datetime
 from typing import Any
 from zoneinfo import ZoneInfo
 
 from .app import mcp, note
-from .common import clamp, fail, get_json, norm
+from .common import clamp, fail, get_json, http, norm
 
 log = logging.getLogger("portugal_mcp.eletricidade")
 
@@ -25,8 +26,14 @@ note(
     "power_cuts lists the PLANNED electricity interruptions E-REDES has announced (maintenance and "
     "works), usually for the next two weeks, by postal code, municipality or parish. It is not a "
     "list of live faults: for an outage happening now, point to E-REDES (808 100 100 or "
-    "balcaodigital.e-redes.pt). Give the date, start and end time and say it is planned.",
+    "balcaodigital.e-redes.pt). Give the date, start and end time and say it is planned. "
+    "electricity_price gives OMIE's day-ahead wholesale price for Portugal in €/MWh, per 15 minutes: "
+    "it is not the retail tariff on a bill, though indexed ('dynamic') tariffs follow it. Cite OMIE.",
 )
+
+OMIE_FILE = "https://www.omie.es/es/file-download"
+OMIE_LIST = "https://www.omie.es/es/file-access-list"
+SRC_OMIE = "OMIE - Iberian electricity market operator (omie.es), Portugal day-ahead marginal price; source: OMIE"
 
 _cache: tuple[float, list[dict[str, Any]]] | None = None
 _lock = threading.Lock()
@@ -137,3 +144,84 @@ def power_cuts(
         return out
     except Exception as exc:  # noqa: BLE001
         return fail(log, "power_cuts", exc)
+
+
+_prices: dict[str, list[tuple[int, float]]] = {}
+
+
+def _omie_day(day: date) -> list[tuple[int, float]] | None:
+    """[(period, €/MWh)] for one delivery day, exactly as OMIE publishes it, or None if not published."""
+    key = day.isoformat()
+    if key in _prices:
+        return _prices[key]
+    r = http().get(OMIE_FILE, params={"parents": "marginalpdbcpt", "filename": f"marginalpdbcpt_{day:%Y%m%d}.1"}, timeout=30)
+    if r.status_code == 404 or "MARGINALPDBCPT" not in r.text[:40]:
+        return None
+    r.raise_for_status()
+    rows = []
+    for line in r.text.splitlines():
+        parts = line.strip().rstrip(";").split(";")
+        if len(parts) >= 5 and parts[0].isdigit():
+            rows.append((int(parts[3]), float(parts[4])))
+    if day < date.today():  # past days never change
+        _prices[key] = rows
+    return rows
+
+
+def _latest_published() -> date | None:
+    r = http().get(OMIE_LIST, params={"parents[0]": "/", "parents[1]": "Mercado Diario", "parents[2]": "1. Precios",
+                                       "dir": "Precios horarios del mercado diario en Portugal", "realdir": "marginalpdbcpt"}, timeout=30)
+    days = sorted(set(re.findall(r"marginalpdbcpt_(\d{8})\.1", r.text)))
+    return datetime.strptime(days[-1], "%Y%m%d").date() if days else None
+
+
+def _hhmm(period: int, n: int) -> str:
+    minutes = (period - 1) * (1440 // n)
+    return f"{minutes // 60:02d}:{minutes % 60:02d}"
+
+
+@mcp.tool()
+def electricity_price(day: str | None = None, cheapest: int = 4) -> dict[str, Any]:
+    """Portugal's day-ahead wholesale electricity price (OMIE), per 15-minute period, in €/MWh.
+
+    Useful for indexed ("dynamic") tariffs: when is electricity cheapest to run the washing
+    machine or charge the car. Not the retail price on a normal bill.
+    Args:
+        day: ISO date, e.g. "2026-11-10". Default: the most recent day OMIE has published.
+        cheapest: also list this many cheapest periods (max 12).
+    """
+    try:
+        want = date.fromisoformat(day) if day else None
+        got = _omie_day(want) if want else None
+        note_ = None
+        if got is None:
+            latest = _latest_published()
+            if latest is None:
+                raise RuntimeError("OMIE's price files could not be listed right now")
+            if want:
+                note_ = (f"OMIE has not published the {want.isoformat()} file yet (its download files lag the market "
+                         f"results by about a day); showing {latest.isoformat()}, the latest published. "
+                         "Today's and tomorrow's prices are on omie.es.")
+            want, got = latest, _omie_day(latest)
+        if not got:
+            raise RuntimeError(f"no OMIE prices for {want}")
+        n = len(got)
+        values = [v for _, v in got]
+        periods = [{"from": _hhmm(p, n), "eur_mwh": v} for p, v in got]
+        k = clamp(cheapest, 0, 12, 4)
+        out: dict[str, Any] = {
+            "day": want.isoformat(),
+            "unit": "€/MWh (wholesale, before taxes, network access and supplier margin)",
+            "periods": periods,
+            "computed_from_omie_values": {
+                "average": round(sum(values) / n, 2), "min": min(values), "max": max(values),
+                "cheapest": sorted(periods, key=lambda x: x["eur_mwh"])[:k] if k else [],
+                "eur_kwh_average": round(sum(values) / n / 1000, 4),
+            },
+            "source": SRC_OMIE,
+        }
+        if note_:
+            out["note"] = note_
+        return out
+    except Exception as exc:  # noqa: BLE001
+        return fail(log, "electricity_price", exc)

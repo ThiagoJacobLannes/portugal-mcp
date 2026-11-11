@@ -130,6 +130,35 @@ def test_power_cuts():
     from portugal_mcp import eletricidade
 
     assert "by_municipality" in ok(eletricidade.power_cuts())
+    assert len(ok(eletricidade.electricity_price())["periods"]) >= 24
+
+
+def test_tourism():
+    from portugal_mcp import turismo
+
+    assert ok(turismo.local_accommodation(municipality="Lisboa", limit=1))["found"] > 1000
+    assert ok(turismo.tourism_places("blue_flag_beaches", place="Cascais"))["found"] > 0
+    assert ok(turismo.tourism_places("hotels", place="Porto", limit=1))["places"]
+
+
+def test_lisbon():
+    from portugal_mcp import lisboa
+
+    assert "events" in ok(lisboa.lisbon_events())
+    ok(lisboa.lisbon_street_works(lat=38.7369, lon=-9.1427, radius_m=800))
+    assert ok(lisboa.lisbon_recycling(38.7369, -9.1427, kind="vidrao", radius_m=800))["found"] > 0
+
+
+def test_open_data_by_town_hall():
+    from portugal_mcp import dados
+
+    assert ok(dados.open_data_search("estacionamento", organization="Lisboa"))["organization"] == "Município de Lisboa"
+
+
+def test_flixbus():
+    from portugal_mcp import transit
+
+    assert ok(transit.transit_find_stops("Lisboa", operator="flixbus", limit=1))["stops"]
 
 
 def test_wildfires():
