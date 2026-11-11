@@ -103,6 +103,35 @@ def test_transit():
     ok(transit.transit_find_stops("Prazeres", operator="carris"))
 
 
+def test_regional_transit():
+    from portugal_mcp import transit
+
+    for op in ("metro_porto", "tub", "smtuc", "sit_coimbra", "cira", "mobicascais", "tcb", "vamus", "proximo", "funchal", "siga_madeira"):
+        r = ok(transit.transit_find_stops(lat=transit_center[op][0], lon=transit_center[op][1], operator=op, limit=1))
+        assert r["stops"], op
+
+
+transit_center = {
+    "metro_porto": (41.1517, -8.6093), "tub": (41.5503, -8.4200), "smtuc": (40.2033, -8.4103),
+    "sit_coimbra": (40.2033, -8.4103), "cira": (40.6405, -8.6538), "mobicascais": (38.6970, -9.4210),
+    "tcb": (38.6631, -9.0724), "vamus": (37.0194, -7.9304), "proximo": (37.0194, -7.9304),
+    "funchal": (32.6496, -16.9086), "siga_madeira": (32.6496, -16.9086),
+}
+
+
+def test_live_vehicles():
+    from portugal_mcp import transit_live
+
+    for op in ("stcp", "smtuc", "carris"):
+        assert "vehicles_reporting" in ok(transit_live.transit_vehicles(op, limit=1)), op
+
+
+def test_power_cuts():
+    from portugal_mcp import eletricidade
+
+    assert "by_municipality" in ok(eletricidade.power_cuts())
+
+
 def test_wildfires():
     from portugal_mcp import incendios
 

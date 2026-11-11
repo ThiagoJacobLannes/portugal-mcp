@@ -354,6 +354,137 @@ def test_transit_departures_skip_arrivals(mini_transit):
     assert arr["results"][0]["departures"] == []
 
 
+def test_transit_regions_and_aliases():
+    from portugal_mcp import transit
+
+    assert transit._ops(None) == ["cp", "metro_lisboa", "carris", "fertagus"]
+    assert transit._ops("Porto") == ["metro_porto", "cp"]
+    assert transit._ops("Metro do Porto") == ["metro_porto"]
+    assert transit._ops("Funchal") == ["funchal", "siga_madeira"]
+    assert all(op in transit.OPERATORS for ops in transit.REGIONS.values() for op in ops)
+    with pytest.raises(ValueError):
+        transit._ops("Atlantis")
+
+
+def test_transit_expired_timetable_warns(mini_transit):
+    r = mini_transit.transit_departures("Lisboa Oriente", when="2027-02-01T07:00", window_minutes=60)
+    res = r["results"][0]
+    assert res["timetable_valid_until"] == "2026-12-31"
+    assert "ends on 2026-12-31" in res["warning"]
+    ok = mini_transit.transit_departures("Lisboa Oriente", when="2026-11-03T07:00", window_minutes=60)
+    assert "warning" not in ok["results"][0]
+
+
+def test_transit_strips_stop_codes(tmp_path):
+    import sqlite3
+    import zipfile as zf
+
+    from portugal_mcp import transit
+
+    zp, db = tmp_path / "m.zip", tmp_path / "m.sqlite"
+    with zf.ZipFile(zp, "w") as z:
+        z.writestr("stops.txt", "stop_id,stop_name,stop_lat,stop_lon\n1,Marina (00001),32.6,-16.9\n2,Marina (00003),32.6,-16.9\n")
+    transit._build("funchal", str(zp), str(db), "fp")
+    con = sqlite3.connect(db)
+    con.row_factory = sqlite3.Row
+    groups = transit._stations(con, "marina")
+    assert len(groups) == 1 and groups[0]["name"] == "Marina" and groups[0]["stop_ids"] == {"1", "2"}
+
+
+# --- live vehicles (GTFS-Realtime, STCP) ------------------------------------------------
+
+
+def _pb_varint(n):
+    out = bytearray()
+    while True:
+        b = n & 0x7F
+        n >>= 7
+        out.append(b | (0x80 if n else 0))
+        if not n:
+            return bytes(out)
+
+
+def _pb(num, value):
+    import struct
+
+    if isinstance(value, int):
+        return _pb_varint(num << 3) + _pb_varint(value)
+    if isinstance(value, float):
+        return _pb_varint(num << 3 | 5) + struct.pack("<f", value)
+    data = value.encode() if isinstance(value, str) else value
+    return _pb_varint(num << 3 | 2) + _pb_varint(len(data)) + data
+
+
+def test_gtfsrt_vehicle_positions():
+    from portugal_mcp import gtfsrt
+
+    trip = _pb(1, "T9") + _pb(5, "28E") + _pb(6, 1)
+    pos = _pb(1, 38.7106) + _pb(2, -9.1395) + _pb(3, 90.0) + _pb(5, 5.0)
+    vp = _pb(1, trip) + _pb(2, pos) + _pb(4, 2) + _pb(5, 1794389018) + _pb(7, "S1") + _pb(8, _pb(1, "544"))
+    feed = _pb(1, _pb(1, "2.0") + _pb(3, 1794389020)) + _pb(2, _pb(1, "e1") + _pb(4, vp)) + _pb(2, _pb(1, "e2"))
+    ts, rows = gtfsrt.vehicles(feed)
+    assert ts == 1794389020 and len(rows) == 1
+    v = rows[0]
+    assert (v["vehicle_id"], v["route_id"], v["trip_id"], v["stop_id"], v["status"]) == ("544", "28E", "T9", "S1", "on the way to")
+    assert abs(v["lat"] - 38.7106) < 1e-4 and v["speed_kmh"] == 18 and v["bearing"] == 90
+
+
+def test_transit_vehicles_stcp(monkeypatch):
+    import time as _t
+    from datetime import datetime, timezone
+
+    from portugal_mcp import transit_live
+
+    now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.00Z")
+
+    class Resp:
+        def json(self):
+            return [
+                {"fleetVehicleId": "3543", "annotations": ["stcp:route:902", "stcp:sentido:0"], "bearing": 258, "speed": 0,
+                 "location": {"coordinates": [-8.6597, 41.1318]}, "observationDateTime": now},
+                {"fleetVehicleId": "3262", "annotations": ["stcp:route:500", "stcp:sentido:1"], "speed": 12,
+                 "location": {"coordinates": [-8.6458, 41.1484]}, "observationDateTime": now},
+                {"fleetVehicleId": "1", "annotations": ["stcp:route:500"], "location": {"coordinates": [-8.6, 41.1]},
+                 "observationDateTime": "2020-01-01T00:00:00.00Z"},
+            ]
+
+    monkeypatch.setattr(transit_live, "http", lambda: type("C", (), {"get": lambda self, *a, **k: Resp()})())
+    transit_live._cache.clear()
+    r = transit_live.transit_vehicles("porto", line="500")
+    assert r["vehicles_reporting"] == 2 and r["matching"] == 1
+    v = r["vehicles"][0]
+    assert v["vehicle_id"] == "3262" and v["direction_id"] == 1 and v["seconds_ago"] < 60
+    near = transit_live.transit_vehicles("stcp", lat=41.1318, lon=-8.6597, radius_km=0.5)
+    assert [x["vehicle_id"] for x in near["vehicles"]] == ["3543"]
+    assert _t.time()  # keeps the import used
+
+
+# --- electricity (E-REDES planned cuts) --------------------------------------------------
+
+
+def test_power_cuts_groups_and_matches(monkeypatch):
+    from datetime import datetime, timedelta
+
+    from portugal_mcp import eletricidade
+
+    day = (datetime.now(eletricidade.TZ) + timedelta(days=3)).date().isoformat()
+    rows = [
+        {"zipcode": z, "municipality": "Oeiras", "parish": "Algés", "startdatetime": f"{day}T00:30:00",
+         "enddatetime": f"{day}T04:30:00", "durationallocation": "240", "updatedatetime": "2026-11-11"}
+        for z in ("2795-082", "2795-083")
+    ] + [{"zipcode": "2735-133", "municipality": "Sintra", "parish": "Cacém", "startdatetime": "2020-01-01T04:00:00",
+          "enddatetime": "2020-01-01T06:00:00", "durationallocation": "120"}]
+    monkeypatch.setattr(eletricidade, "_rows", lambda: rows)
+    r = eletricidade.power_cuts(postal_code="2795-082")
+    assert r["your_postal_code_affected"] is True and r["found"] == 1
+    c = r["planned_cuts"][0]
+    assert (c["date"], c["from"], c["to"], c["postal_codes"]) == (day, "00:30", "04:30", ["2795-082", "2795-083"])
+    assert eletricidade.power_cuts(postal_code="2795-999")["your_postal_code_affected"] is False
+    assert eletricidade.power_cuts(municipality="sintra")["found"] == 0  # past cut dropped
+    assert eletricidade.power_cuts()["by_municipality"][0]["municipality"] == "Oeiras"
+    assert "error" in eletricidade.power_cuts(postal_code="27950")
+
+
 # --- wildfires (EFFIS) ----------------------------------------------------------------
 
 EFFIS_SAMPLE = b"""<?xml version='1.0' encoding="UTF-8" ?>

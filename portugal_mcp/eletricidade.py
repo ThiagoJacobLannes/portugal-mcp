@@ -1,0 +1,139 @@
+"""Electricity: planned power cuts from E-REDES, the distribution network operator (open data)."""
+
+from __future__ import annotations
+
+import logging
+import re
+import threading
+import time
+from datetime import datetime
+from typing import Any
+from zoneinfo import ZoneInfo
+
+from .app import mcp, note
+from .common import clamp, fail, get_json, norm
+
+log = logging.getLogger("portugal_mcp.eletricidade")
+
+TZ = ZoneInfo("Europe/Lisbon")
+EXPORT = "https://e-redes.opendatasoft.com/api/explore/v2.1/catalog/datasets/network-scheduling-work/exports/json"
+SOURCE = "E-REDES open data: scheduled maintenance on the distribution network (e-redes.opendatasoft.com, CC BY 4.0)"
+TTL = 3600
+
+note(
+    "eletricidade",
+    "power_cuts lists the PLANNED electricity interruptions E-REDES has announced (maintenance and "
+    "works), usually for the next two weeks, by postal code, municipality or parish. It is not a "
+    "list of live faults: for an outage happening now, point to E-REDES (808 100 100 or "
+    "balcaodigital.e-redes.pt). Give the date, start and end time and say it is planned.",
+)
+
+_cache: tuple[float, list[dict[str, Any]]] | None = None
+_lock = threading.Lock()
+
+
+def _rows() -> list[dict[str, Any]]:
+    global _cache
+    with _lock:
+        if _cache and time.time() - _cache[0] < TTL:
+            return _cache[1]
+    rows = get_json(EXPORT, timeout=60)
+    with _lock:
+        _cache = (time.time(), rows)
+    return rows
+
+
+def _dt(s: Any) -> datetime | None:
+    try:
+        return datetime.fromisoformat(str(s)).replace(tzinfo=TZ)
+    except ValueError:
+        return None
+
+
+@mcp.tool()
+def power_cuts(
+    postal_code: str | None = None,
+    municipality: str | None = None,
+    parish: str | None = None,
+    days: int = 14,
+    limit: int = 30,
+) -> dict[str, Any]:
+    """Planned power cuts (E-REDES maintenance works) for a postal code, municipality or parish.
+
+    Args:
+        postal_code: "2795-082" for that street, or "2795" for the whole postal area.
+        municipality: e.g. "Sintra", "Vila Nova de Gaia".
+        parish: e.g. "Algés" (matches part of the parish name).
+        days: how far ahead to look (max 60).
+    With nothing given, returns a national summary by municipality.
+    """
+    try:
+        now = datetime.now(TZ)
+        horizon = clamp(days, 1, 60, 14)
+        n = clamp(limit, 1, 100, 30)
+        rows = []
+        for r in _rows():
+            start, end = _dt(r.get("startdatetime")), _dt(r.get("enddatetime"))
+            if not start or not end or end < now or (start - now).days >= horizon:
+                continue
+            rows.append((start, end, r))
+        updated = max((str(r.get("updatedatetime") or "") for _, _, r in rows), default=None)
+
+        if not (postal_code or municipality or parish):
+            by: dict[str, int] = {}
+            for _, _, r in rows:
+                by[r.get("municipality") or "?"] = by.get(r.get("municipality") or "?", 0) + 1
+            top = sorted(by.items(), key=lambda kv: -kv[1])
+            return {
+                "planned_cuts_postal_codes": len(rows),
+                "municipalities": len(by),
+                "by_municipality": [{"municipality": k, "postal_codes_affected": v} for k, v in top[:n]],
+                "data_updated": updated,
+                "note": "Planned works only. Ask again with a postal code or municipality for dates and times.",
+                "source": SOURCE,
+            }
+
+        exact = None
+        if postal_code:
+            m = re.fullmatch(r"\s*(\d{4})(?:\s*-\s*(\d{3}))?\s*", postal_code)
+            if not m:
+                raise ValueError("postal_code is 'XXXX-XXX' or the first four digits 'XXXX'")
+            cp4, exact = m.group(1), f"{m.group(1)}-{m.group(2)}" if m.group(2) else None
+            rows = [x for x in rows if str(x[2].get("zipcode", "")).startswith(cp4)]
+        if municipality:
+            q = norm(municipality)
+            rows = [x for x in rows if q in norm(x[2].get("municipality"))]
+        if parish:
+            q = norm(parish)
+            rows = [x for x in rows if q in norm(x[2].get("parish"))]
+
+        groups: dict[tuple[Any, ...], dict[str, Any]] = {}
+        for start, end, r in sorted(rows, key=lambda x: x[0]):
+            k = (start, end, r.get("municipality"), r.get("parish"))
+            g = groups.setdefault(k, {
+                "date": start.date().isoformat(),
+                "from": start.strftime("%H:%M"),
+                "to": end.strftime("%H:%M") if end.date() == start.date() else end.strftime("%Y-%m-%d %H:%M"),
+                "duration_min": int(r["durationallocation"]) if str(r.get("durationallocation", "")).isdigit() else None,
+                "municipality": r.get("municipality"),
+                "parish": r.get("parish"),
+                "postal_codes": [],
+            })
+            g["postal_codes"].append(r.get("zipcode"))
+        cuts = list(groups.values())
+        out: dict[str, Any] = {"planned_cuts": cuts[:n], "found": len(cuts), "days_ahead": horizon, "data_updated": updated}
+        if exact:
+            hit = [c for c in cuts if exact in c["postal_codes"]]
+            out["your_postal_code_affected"] = bool(hit)
+            if hit:
+                out["planned_cuts"] = hit + [c for c in cuts if c not in hit][: max(0, n - len(hit))]
+            out["note"] = (
+                f"{exact} is on the list: see the first entries." if hit else
+                f"No planned cut announced for {exact}; the list shows others in the same postal area ({exact[:4]})."
+            )
+        if not cuts:
+            out["note"] = "No planned power cuts announced there in this period."
+        out["source"] = SOURCE
+        return out
+    except Exception as exc:  # noqa: BLE001
+        return fail(log, "power_cuts", exc)

@@ -1,4 +1,5 @@
-"""Timetables from the operators' official GTFS feeds: CP trains, Metro de Lisboa, Carris, Fertagus.
+"""Timetables from the operators' official GTFS feeds: CP trains, Lisbon, Porto, Coimbra, Braga,
+Aveiro, Cascais, Barreiro, the Algarve and Madeira.
 
 Each feed is downloaded once a day at most (re-downloaded only when it changed) and loaded into a
 local SQLite file, so even Carris' 145 MB of stop times are queried without holding them in memory.
@@ -27,42 +28,145 @@ log = logging.getLogger("portugal_mcp.transit")
 TZ = ZoneInfo("Europe/Lisbon")
 
 # Official feeds only (each operator publishes it; listed in the Mobility Database as official).
+# "region" groups them: the tools search CP and the Lisbon ones unless an operator or region is named.
 OPERATORS: dict[str, dict[str, str]] = {
     "cp": {
         "name": "CP - Comboios de Portugal",
         "mode": "train",
+        "region": "national",
         "url": "https://publico.cp.pt/gtfs/gtfs.zip",
         "covers": "Every CP train: long distance (Alfa Pendular, Intercidades), regional, and the Lisbon, Porto and Coimbra suburban lines",
     },
     "metro_lisboa": {
         "name": "Metropolitano de Lisboa",
         "mode": "metro",
+        "region": "lisboa",
         "url": "https://www.metrolisboa.pt/google_transit/googleTransit.zip",
         "covers": "The four Lisbon metro lines (Azul, Amarela, Verde, Vermelha)",
     },
     "carris": {
         "name": "Carris (Lisbon city buses, trams and lifts)",
         "mode": "bus",
+        "region": "lisboa",
         "url": "https://gateway.carris.pt/gateway/gtfs/api/v2.11/GTFS",
         "covers": "Lisbon city buses, trams (e.g. 28E) and lifts. Greater-Lisbon buses are Carris Metropolitana: use the bus_* tools",
     },
     "fertagus": {
         "name": "Fertagus",
         "mode": "train",
+        "region": "lisboa",
         "url": "https://www.fertagus.pt/GTFSTMLzip/Fertagus_GTFS.zip",
         "covers": "The train over the 25 de Abril bridge: Roma-Areeiro - Setúbal",
     },
+    "tcb": {
+        "name": "TCB - Transportes Colectivos do Barreiro",
+        "mode": "bus",
+        "region": "barreiro",
+        "url": "https://backend.tcbarreiro.pt/download-gtfs",
+        "covers": "Barreiro town buses",
+    },
+    "mobicascais": {
+        "name": "MobiCascais (Cascais Próxima)",
+        "mode": "bus",
+        "region": "cascais",
+        "url": "https://drive.google.com/uc?export=download&id=13ucYiAJRtu-gXsLa02qKJrGOgDjbnUWX",
+        "covers": "Cascais municipal buses (MobiCascais)",
+    },
+    "metro_porto": {
+        "name": "Metro do Porto",
+        "mode": "metro",
+        "region": "porto",
+        "url": "https://www.metrodoporto.pt/metrodoporto/uploads/document/file/794/google_transit.zip",
+        "covers": "The Porto metro lines A to H, including the airport line (E)",
+    },
+    "tub": {
+        "name": "TUB - Transportes Urbanos de Braga",
+        "mode": "bus",
+        "region": "braga",
+        "url": "https://www.tub.pt/developer/gtfs/feed/tub.zip",
+        "covers": "Braga city buses",
+    },
+    "cira": {
+        "name": "Busway - Região de Aveiro (CIRA)",
+        "mode": "bus",
+        "region": "aveiro",
+        "url": "https://gtfs.itbusway.eu/GTFS_CIRA.zip",
+        "covers": "Buses in Aveiro and its region (Ílhavo, Ovar, Águeda, Albergaria, Estarreja...)",
+    },
+    "smtuc": {
+        "name": "SMTUC - Transportes Urbanos de Coimbra",
+        "mode": "bus",
+        "region": "coimbra",
+        "url": "https://dados.gov.pt/api/1/datasets/r/24045cfe-7132-430e-922f-3d3a7f0c921f",
+        "covers": "Coimbra city buses",
+    },
+    "sit_coimbra": {
+        "name": "SIT Metropolitano da Região de Coimbra",
+        "mode": "bus",
+        "region": "coimbra",
+        "url": "https://gtfs.itbusway.eu/GTFS_SIT_Metropolitano.zip",
+        "covers": "Intermunicipal buses around Coimbra (Figueira da Foz, Cantanhede, Lousã, Penacova...)",
+    },
+    "vamus": {
+        "name": "Vamus Algarve",
+        "mode": "bus",
+        "region": "algarve",
+        "url": "https://drive.google.com/uc?export=download&id=1CM8O4ndsfSJhka42SxFUZ9eB-wE10NqX",
+        "covers": "Regional buses across the Algarve",
+    },
+    "proximo": {
+        "name": "Próximo - Transportes Urbanos de Faro",
+        "mode": "bus",
+        "region": "algarve",
+        "url": "https://drive.google.com/uc?export=download&id=1xNHjM7yl-SS1jCkGrvIBBlOhUkFfNBjY",
+        "covers": "Faro city buses",
+    },
+    "funchal": {
+        "name": "Horários do Funchal",
+        "mode": "bus",
+        "region": "madeira",
+        "url": "https://www.horariosdofunchal.pt/googletransit.zip",
+        "covers": "Funchal city buses (the yellow buses) and some routes beyond",
+    },
+    "siga_madeira": {
+        "name": "Rede SIGA Madeira (CAM, Rodoeste, Horários do Funchal)",
+        "mode": "bus",
+        "region": "madeira",
+        "url": "https://gtfs.tiim.pt/rede-siga/rede-siga-gtfs.zip",
+        "covers": "Intercity buses across Madeira island",
+    },
+}
+
+# Region (or city) names people use -> operator ids. "lisboa" is the default search set.
+REGIONS: dict[str, list[str]] = {
+    "lisboa": ["cp", "metro_lisboa", "carris", "fertagus"],
+    "porto": ["metro_porto", "cp"],
+    "braga": ["tub", "cp"],
+    "coimbra": ["smtuc", "sit_coimbra", "cp"],
+    "aveiro": ["cira", "cp"],
+    "cascais": ["mobicascais", "cp"],
+    "barreiro": ["tcb", "cp"],
+    "algarve": ["vamus", "proximo", "cp"],
+    "faro": ["proximo", "vamus", "cp"],
+    "madeira": ["funchal", "siga_madeira"],
+    "funchal": ["funchal", "siga_madeira"],
 }
 
 SOURCE = "Operators' official GTFS timetables"
 CHECK_EVERY = 86400  # seconds between upstream freshness checks
+BUILD_VERSION = "2"  # bump when the SQLite layout or name cleanup changes: caches rebuild once
+STOP_CODE = re.compile(r"\s*\(\d+\)\s*$")  # "Marina (00001)" -> "Marina" (Madeira feeds)
 
 note(
     "transit",
-    "Timetables (scheduled times, not live) for CP trains, Metro de Lisboa, Carris (Lisbon city "
-    "buses and trams) and Fertagus. Use transit_find_stops, then transit_departures or "
-    "transit_trips_between. The first use of an operator downloads its timetable (Carris: about a "
-    "minute). Say the times are scheduled; for disruptions point to the operator's site.",
+    "Timetables (scheduled times, not live) for CP trains, Metro de Lisboa, Carris, Fertagus, "
+    "Metro do Porto, and the buses of Braga, Coimbra, Aveiro, Cascais, Barreiro, the Algarve and "
+    "Madeira. Use transit_find_stops, then transit_departures or transit_trips_between. Outside "
+    "Lisbon pass `operator` as the city or region (e.g. 'porto', 'coimbra', 'madeira'): without "
+    "it only CP and the Lisbon operators are searched. The first use of an operator downloads its "
+    "timetable (up to a minute). Say the times are scheduled; if a result carries a `warning` that "
+    "the timetable has ended, say so. Live vehicle positions (Porto STCP, Coimbra SMTUC, Lisbon "
+    "Carris): transit_vehicles.",
 )
 
 _locks: dict[str, threading.Lock] = {op: threading.Lock() for op in OPERATORS}
@@ -120,7 +224,8 @@ def _build(op: str, zip_path: str, db_path: str, fingerprint: str) -> None:
                 except ValueError:
                     lat = lon = float("nan")
                 station = (r.get("parent_station") or "").strip() or r["stop_id"]
-                stops.append((r["stop_id"], r.get("stop_name", "").strip(), _key(r.get("stop_name")), lat, lon, station))
+                name = STOP_CODE.sub("", r.get("stop_name") or "").strip()
+                stops.append((r["stop_id"], name, _key(name), lat, lon, station))
             con.executemany("INSERT OR REPLACE INTO stops VALUES (?,?,?,?,?,?)", stops)
             con.executemany(
                 "INSERT OR REPLACE INTO routes VALUES (?,?,?,?)",
@@ -162,12 +267,19 @@ def _build(op: str, zip_path: str, db_path: str, fingerprint: str) -> None:
 
 
 def _fingerprint(url: str) -> str | None:
+    """Last-Modified / ETag / size of the feed, without downloading it. Some hosts refuse HEAD
+    (405/406), so fall back to a one-byte ranged GET."""
+
+    def pick(h: Any) -> str | None:
+        size = h["Content-Range"].rpartition("/")[2] if "Content-Range" in h else h.get("Content-Length")
+        return h.get("Last-Modified") or h.get("ETag") or (f"len:{size}" if size else None)
+
     try:
-        r = http().head(url, timeout=20)
-        if r.status_code >= 400:
-            return None
-        h = r.headers
-        return h.get("Last-Modified") or h.get("ETag") or (f"len:{h['Content-Length']}" if h.get("Content-Length") else None)
+        r = http().head(url, timeout=20, headers={"Accept": "*/*"})
+        if r.status_code < 400:
+            return pick(r.headers)
+        with http().stream("GET", url, timeout=20, headers={"Accept": "*/*", "Range": "bytes=0-0"}) as g:
+            return pick(g.headers) if g.status_code < 400 else None
     except Exception:  # noqa: BLE001 — freshness check is best effort
         return None
 
@@ -188,10 +300,15 @@ def _db(op: str) -> sqlite3.Connection:
                 con = c
             except sqlite3.Error:
                 con = None
-        stale = not meta or time.time() - float(meta.get("checked", 0)) > CHECK_EVERY
+        stale = (
+            not meta
+            or time.time() - float(meta.get("checked", 0)) > CHECK_EVERY
+            or not meta.get("fingerprint", "").startswith(f"{BUILD_VERSION}|")
+        )
         if stale:
             url = OPERATORS[op]["url"]
             fp = _fingerprint(url)
+            fp = f"{BUILD_VERSION}|{fp}" if fp else None
             if meta and fp and fp == meta.get("fingerprint"):
                 con.execute("UPDATE meta SET value=? WHERE key='checked'", (str(time.time()),))
                 con.commit()
@@ -204,7 +321,7 @@ def _db(op: str) -> sqlite3.Connection:
                         con.close()
                         con = None
                         _conns.pop(op, None)
-                    _build(op, str(zpath), db_path, fp or f"t:{int(time.time())}")
+                    _build(op, str(zpath), db_path, fp or f"{BUILD_VERSION}|t:{int(time.time())}")
                     zpath.unlink(missing_ok=True)
                 except Exception:
                     if not meta:
@@ -217,14 +334,27 @@ def _db(op: str) -> sqlite3.Connection:
         return con
 
 
+ALIASES = {
+    "metro": "metro_lisboa", "metropolitano": "metro_lisboa", "ml": "metro_lisboa", "metro_de_lisboa": "metro_lisboa",
+    "comboios": "cp", "trains": "cp", "train": "cp", "comboio": "cp",
+    "metro_do_porto": "metro_porto", "metroporto": "metro_porto",
+    "busway": "cira", "aveirobus": "cira", "siga": "siga_madeira", "sit": "sit_coimbra",
+    "lisbon": "lisboa", "oporto": "porto",
+}
+
+
 def _ops(operator: str | None) -> list[str]:
+    """Operator ids for an operator, a city/region, or (none given) CP plus the Lisbon operators."""
     if not operator:
-        return list(OPERATORS)
+        return list(REGIONS["lisboa"])
     key = norm(operator).replace(" ", "_").replace("-", "_")
-    aliases = {"metro": "metro_lisboa", "metropolitano": "metro_lisboa", "ml": "metro_lisboa", "comboios": "cp", "trains": "cp", "train": "cp", "comboio": "cp"}
-    key = aliases.get(key, key)
+    key = ALIASES.get(key, key)
+    if key in REGIONS:
+        return list(REGIONS[key])
     if key not in OPERATORS:
-        raise ValueError(f"unknown operator {operator!r}; one of: {', '.join(OPERATORS)}")
+        raise ValueError(
+            f"unknown operator or region {operator!r}; operators: {', '.join(OPERATORS)}; regions: {', '.join(REGIONS)}"
+        )
     return [key]
 
 
@@ -287,18 +417,37 @@ def _when(when: str | None) -> datetime:
     return dt.replace(tzinfo=TZ) if dt.tzinfo is None else dt.astimezone(TZ)
 
 
-def _feed_info(con: sqlite3.Connection, op: str) -> dict[str, Any]:
+def _valid_until(con: sqlite3.Connection) -> str | None:
+    a = con.execute("SELECT MAX(end) FROM calendar").fetchone()[0]
+    b = con.execute("SELECT MAX(date) FROM calendar_dates WHERE type = 1").fetchone()[0]
+    last = max(x or "" for x in (a, b))
+    return f"{last[:4]}-{last[4:6]}-{last[6:8]}" if len(last) == 8 else None
+
+
+def _feed_info(con: sqlite3.Connection, op: str, day: date | None = None) -> dict[str, Any]:
     built = con.execute("SELECT value FROM meta WHERE key='built'").fetchone()
-    return {"operator": OPERATORS[op]["name"], "timetable_loaded": built[0] if built else None}
+    info: dict[str, Any] = {"operator": OPERATORS[op]["name"], "timetable_loaded": built[0] if built else None}
+    until = _valid_until(con)
+    if until:
+        info["timetable_valid_until"] = until
+        if day and until < day.isoformat():
+            info["warning"] = (
+                f"The timetable {OPERATORS[op]['name']} publishes ends on {until} and no newer one is "
+                "published yet, so services after that date are missing. Check the operator's website."
+            )
+    return info
 
 
 @mcp.tool()
 def transit_operators() -> dict[str, Any]:
     """Which transport operators have timetables here, and what each one covers."""
     return {
-        "operators": [{"id": k, "name": v["name"], "mode": v["mode"], "covers": v["covers"]} for k, v in OPERATORS.items()],
-        "not_covered": "Metro do Porto and STCP do not publish a current official timetable feed; "
-        "Greater-Lisbon buses (Carris Metropolitana) have live tools: bus_find_stops, bus_next_arrivals.",
+        "operators": [{"id": k, "name": v["name"], "mode": v["mode"], "region": v["region"], "covers": v["covers"]} for k, v in OPERATORS.items()],
+        "regions": REGIONS,
+        "not_covered": "STCP (Porto buses): the last published timetable ended in September 2026, so only live "
+        "positions are available (transit_vehicles). Greater-Lisbon buses (Carris Metropolitana) have live tools: "
+        "bus_find_stops, bus_next_arrivals. No open timetables found for Viseu, Évora, Leiria, the Azores or the "
+        "Tagus ferries (Transtejo/Soflusa).",
         "source": SOURCE,
     }
 
@@ -315,7 +464,8 @@ def transit_find_stops(
 
     Args:
         query: e.g. "Oriente", "Porto Campanhã", "Marquês de Pombal", "Prazeres".
-        operator: "cp", "metro_lisboa", "carris" or "fertagus". Default: all of them.
+        operator: an operator id (see transit_operators) or a city/region: "porto", "coimbra", "braga",
+            "aveiro", "cascais", "barreiro", "algarve", "faro", "madeira". Default: CP and the Lisbon operators.
         lat, lon: find the nearest instead of (or as well as) by name.
     """
     try:
@@ -406,7 +556,8 @@ def transit_departures(
 
     Args:
         stop: station or stop name, e.g. "Lisboa Oriente", "Cais do Sodré", "Baixa-Chiado", "Prazeres".
-        operator: "cp", "metro_lisboa", "carris" or "fertagus"; default: every operator that has the stop.
+        operator: an operator id (see transit_operators) or a city/region: "porto", "coimbra", "braga",
+            "aveiro", "cascais", "barreiro", "algarve", "faro", "madeira". Default: CP and the Lisbon operators.
         when: ISO date-time in Lisbon time, e.g. "2026-11-03T08:00". Default: now.
         window_minutes: how far ahead to look (max 720).
         line: keep only a line or destination, e.g. "28E", "Sintra", "Azul".
@@ -427,7 +578,7 @@ def transit_departures(
                 if deps:
                     best = cand
                     break
-            results.append({**_feed_info(con, op), "station": best["name"], "departures": deps[:n],
+            results.append({**_feed_info(con, op, start.date()), "station": best["name"], "departures": deps[:n],
                             "other_matches": [s["name"] for s in st if s is not best] or None})
         if not results:
             return {"error": f"no stop called {stop!r}; try transit_find_stops"}
@@ -450,7 +601,8 @@ def transit_trips_between(
     Examples: CP "Lisboa Oriente" → "Porto Campanhã"; Fertagus "Roma-Areeiro" → "Setúbal";
     Metro "Alameda" → "Aeroporto" (same line only). Scheduled times, not live.
     Args:
-        operator: "cp", "metro_lisboa", "carris" or "fertagus"; default: try all.
+        operator: an operator id (see transit_operators) or a city/region: "porto", "coimbra", "braga",
+            "aveiro", "cascais", "barreiro", "algarve", "faro", "madeira". Default: CP and the Lisbon operators.
         when: ISO date-time in Lisbon time; default now.
         window_minutes: departures within this window (max 1440).
     """
@@ -492,7 +644,7 @@ def transit_trips_between(
             trips.sort(key=lambda x: x["_k"])
             if trips or len(_ops(operator)) == 1:
                 results.append({
-                    **_feed_info(con, op),
+                    **_feed_info(con, op, start.date()),
                     "from": a[0]["name"],
                     "to": b[0]["name"],
                     "trips": [{k: v for k, v in x.items() if k != "_k"} for x in trips[:n]],
@@ -508,3 +660,6 @@ def transit_trips_between(
                 "note": "Scheduled times from the official timetable, not live.", "source": SOURCE}
     except Exception as exc:  # noqa: BLE001
         return fail(log, "transit_trips_between", exc)
+
+
+from . import transit_live  # noqa: E402,F401 — live vehicle positions register with this feature
