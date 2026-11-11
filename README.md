@@ -30,11 +30,11 @@
 | `transit` | `transit_operators`, `transit_find_stops`, `transit_departures`, `transit_trips_between`, `transit_vehicles` (live) | Official GTFS timetables of [CP](https://www.cp.pt), [Metro de Lisboa](https://www.metrolisboa.pt), [Carris](https://www.carris.pt), [Fertagus](https://www.fertagus.pt), [Metro do Porto](https://www.metrodoporto.pt), [TUB](https://www.tub.pt) (Braga), [SMTUC](https://www.smtuc.pt) and SIT (Coimbra), [Busway](https://www.busway.pt) (Aveiro region), [MobiCascais](https://www.mobicascais.pt), [TCB](https://www.tcbarreiro.pt) (Barreiro), [Vamus](https://vamus.pt) and Próximo (Algarve), [Horários do Funchal](https://www.horariosdofunchal.pt) and the SIGA network (Madeira), and [FlixBus](https://www.flixbus.pt) coaches (ODbL). Live positions: STCP ([Porto urban platform](https://dadosabertos.cm-porto.pt)), SMTUC ([AGIT](https://api.planner.agit.pt)), Carris (GTFS-Realtime) |
 | `incendios` | `wildfires` | [EFFIS](https://forest-fire.emergency.copernicus.eu) (Copernicus, CC BY 4.0) |
 | `ocorrencias` | `active_incidents` (live: what civil protection is responding to near a place, closest first; needs a free personal key in `FOGOS_API_KEY`, police activity is not public) | [ANEPC](https://prociv.gov.pt) via [Fogos.pt](https://fogos.pt) ([request a key](https://source.fogos.pt/api/request-access)) |
-| `eletricidade` | `power_cuts` (planned interruptions by postal code, municipality or parish) | [E-REDES open data](https://e-redes.opendatasoft.com) (CC BY 4.0) |
+| `eletricidade` | `power_cuts` (planned interruptions by postal code, municipality or parish), `electricity_price` (day-ahead wholesale price for Portugal, per 15 minutes) | [E-REDES open data](https://e-redes.opendatasoft.com) (CC BY 4.0), [OMIE](https://www.omie.es) (free use, unaltered, source cited) |
 | `turismo` | `local_accommodation` (the Alojamento Local register: is it registered, how many on a street), `tourism_places` (Blue Flag beaches, surf spots, golf, spas, villages, walking routes, Ways of Saint James, marinas, UNESCO sites, hotels) | [Turismo de Portugal open data](https://dadosabertos.turismodeportugal.pt) (CC BY 4.0) |
 | `lisboa` | `lisbon_events` (the city's cultural agenda), `lisbon_street_works` (licensed occupations of public space, road and pavement works), `lisbon_recycling` (nearest ecoponto, vidrão, oleão...) | [Agenda Cultural de Lisboa](https://www.agendalx.pt) (CC BY), [Lisbon open data](https://geodados-cml.hub.arcgis.com) (CC0 for occupations) |
 
-There are 55 tools in total. If your client struggles with that many, load only what you need with `PORTUGAL_MCP_FEATURES` (see below).
+There are 56 tools in total. If your client struggles with that many, load only what you need with `PORTUGAL_MCP_FEATURES` (see below).
 
 ### Things to know
 
@@ -48,7 +48,8 @@ There are 55 tools in total. If your client struggles with that many, load only 
 - **Power cuts** (`power_cuts`) are the interruptions E-REDES has planned for maintenance, usually for the next two weeks; live faults are not published (call E-REDES, 808 100 100).
 - **Local accommodation:** the register shows what each owner declared; it does not vouch for an online listing. Owner and operator names of tourist establishments are left out on purpose (many are private individuals).
 - **Town-hall data:** `open_data_search(organization="Lisboa")` (or Porto, Cascais, Oeiras, Águeda...) finds that town hall's datasets on dados.gov.pt. Most other towns publish little or nothing.
-- **Not included:** electricity market prices (OMIE and REN don't state reuse terms we could confirm), Porto's road-closure files (last updated in 2024).
+- **Electricity prices** (`electricity_price`) are OMIE's wholesale day-ahead prices for Portugal in €/MWh, as published (averages and cheapest periods are computed from them). OMIE's download files lag the market by about a day, so today's and tomorrow's prices may only be on omie.es yet. Not the price on a regular bill.
+- **Not included:** REN Data Hub (its terms forbid reusing its data without consent), Porto's road-closure files (last updated in 2024).
 - **Wildfires are satellite-mapped burnt areas** (EFFIS), a day or more after the fact, not live incidents. For today's danger use `fire_risk`; in an emergency call **112**.
 
 ## Install

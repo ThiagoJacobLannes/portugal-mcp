@@ -521,6 +521,43 @@ def test_transit_lisbon_synonym_and_station_fallback(tmp_path):
     assert "ODbL" in res["attribution"]
 
 
+def test_electricity_price_parses_and_falls_back(monkeypatch):
+    from datetime import date
+
+    from portugal_mcp import eletricidade
+
+    text = "MARGINALPDBCPT;\n" + "".join(f"2026;11;09;{p};{100 + p};{100 + p};\n" for p in range(1, 97)) + "*\n"
+
+    class Resp:
+        status_code = 200
+
+        def __init__(self, t):
+            self.text = t
+
+        def raise_for_status(self):
+            pass
+
+    calls = []
+
+    def get(url, params=None, timeout=None):
+        calls.append(params.get("filename"))
+        if params.get("filename", "").endswith("20261109.1"):
+            return Resp(text)
+        r = Resp("<html>not found</html>")
+        r.status_code = 404
+        return r
+
+    monkeypatch.setattr(eletricidade, "http", lambda: type("C", (), {"get": staticmethod(get)})())
+    monkeypatch.setattr(eletricidade, "_latest_published", lambda: date(2026, 11, 9))
+    eletricidade._prices.clear()
+    r = eletricidade.electricity_price("2026-11-12", cheapest=2)
+    assert r["day"] == "2026-11-09" and "not published" in r["note"]
+    assert len(r["periods"]) == 96 and r["periods"][1] == {"from": "00:15", "eur_mwh": 102.0}
+    c = r["computed_from_omie_values"]
+    assert c["min"] == 101.0 and c["max"] == 196.0 and [x["from"] for x in c["cheapest"]] == ["00:00", "00:15"]
+    assert "OMIE" in r["source"]
+
+
 # --- tourism (Turismo de Portugal) -------------------------------------------------------
 
 

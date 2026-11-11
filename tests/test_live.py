@@ -130,6 +130,7 @@ def test_power_cuts():
     from portugal_mcp import eletricidade
 
     assert "by_municipality" in ok(eletricidade.power_cuts())
+    assert len(ok(eletricidade.electricity_price())["periods"]) >= 24
 
 
 def test_tourism():

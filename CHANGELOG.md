@@ -7,7 +7,8 @@
 - FlixBus coaches in `transit` (`operator="flixbus"` or `"intercity"`, ODbL, attributed in every result), within Portugal and across Europe; "Lisboa" also finds stops named "Lisbon".
 - `transit_trips_between` tries the top three matching stations at each end, so "Porto" finds Campanhã when the airport stop has no direct service.
 - `open_data_search(organization=...)` finds town halls by town name ("Lisboa", "Cascais", "Oeiras") and no longer returns an unrelated body when the portal's search is loose (e.g. "INE").
-- Not included, with reasons in the README: electricity market prices (reuse terms not confirmed), Porto road closures (stale).
+- New `electricity_price`: OMIE's day-ahead wholesale price for Portugal per 15 minutes, with computed average and cheapest periods. OMIE's terms allow free use if the content is unaltered and the source cited; its download files lag the market by about a day, which the tool says.
+- Not included, with reasons in the README: REN Data Hub (terms forbid reuse without consent), Porto road closures (stale).
 
 ## 0.5.0 — 2026-11-11
 
