@@ -135,6 +135,14 @@ OPERATORS: dict[str, dict[str, str]] = {
         "url": "https://gtfs.tiim.pt/rede-siga/rede-siga-gtfs.zip",
         "covers": "Intercity buses across Madeira island",
     },
+    "flixbus": {
+        "name": "FlixBus",
+        "mode": "coach",
+        "region": "intercity",
+        "url": "https://gtfs.gis.flix.tech/gtfs_generic_eu.zip",
+        "covers": "Intercity coaches within Portugal and to Spain and the rest of Europe",
+        "attribution": "FlixBus timetable data (published by FlixBus on data.gouv.fr), ODbL 1.0",
+    },
 }
 
 # Region (or city) names people use -> operator ids. "lisboa" is the default search set.
@@ -150,6 +158,7 @@ REGIONS: dict[str, list[str]] = {
     "faro": ["proximo", "vamus", "cp"],
     "madeira": ["funchal", "siga_madeira"],
     "funchal": ["funchal", "siga_madeira"],
+    "intercity": ["flixbus", "cp"],
 }
 
 SOURCE = "Operators' official GTFS timetables"
@@ -161,7 +170,8 @@ note(
     "transit",
     "Timetables (scheduled times, not live) for CP trains, Metro de Lisboa, Carris, Fertagus, "
     "Metro do Porto, and the buses of Braga, Coimbra, Aveiro, Cascais, Barreiro, the Algarve and "
-    "Madeira. Use transit_find_stops, then transit_departures or transit_trips_between. Outside "
+    "Madeira, plus FlixBus intercity coaches. Use transit_find_stops, then transit_departures or "
+    "transit_trips_between. Outside "
     "Lisbon pass `operator` as the city or region (e.g. 'porto', 'coimbra', 'madeira'): without "
     "it only CP and the Lisbon operators are searched. The first use of an operator downloads its "
     "timetable (up to a minute). Say the times are scheduled; if a result carries a `warning` that "
@@ -340,6 +350,8 @@ ALIASES = {
     "metro_do_porto": "metro_porto", "metroporto": "metro_porto",
     "busway": "cira", "aveirobus": "cira", "siga": "siga_madeira", "sit": "sit_coimbra",
     "lisbon": "lisboa", "oporto": "porto",
+    "flix": "flixbus", "coach": "intercity", "coaches": "intercity", "autocarro_expresso": "intercity",
+    "expressos": "intercity", "long_distance": "intercity",
 }
 
 
@@ -374,6 +386,9 @@ def _active_services(con: sqlite3.Connection, day: date) -> set[str]:
     return active
 
 
+NAME_SYNONYMS = {"lisboa": "lisbon", "lisbon": "lisboa", "oporto": "porto"}
+
+
 def _stations(con: sqlite3.Connection, query: str, limit: int = 8) -> list[dict[str, Any]]:
     """Stations matching a name. Stops sharing a parent station, or with no parent but the same
     name (e.g. one bus stop per direction), are grouped, with all their stop ids."""
@@ -381,7 +396,11 @@ def _stations(con: sqlite3.Connection, query: str, limit: int = 8) -> list[dict[
     if not words:
         raise ValueError("give a stop or station name")
     where = " AND ".join("norm LIKE ?" for _ in words)
-    rows = con.execute(f"SELECT stop_id, name, norm, lat, lon, station FROM stops WHERE {where}", [f"%{w}%" for w in words]).fetchall()  # noqa: S608 — only placeholders are interpolated
+    sql = f"SELECT stop_id, name, norm, lat, lon, station FROM stops WHERE {where}"  # noqa: S608 — only placeholders are interpolated
+    rows = con.execute(sql, [f"%{w}%" for w in words]).fetchall()
+    if not rows and any(w in NAME_SYNONYMS for w in words):  # FlixBus names stops in English ("Lisbon Sete Rios")
+        words = [NAME_SYNONYMS.get(w, w) for w in words]
+        rows = con.execute(sql, [f"%{w}%" for w in words]).fetchall()
     groups: dict[str, dict[str, Any]] = {}
     for r in rows:
         has_parent = r["station"] != r["stop_id"]
@@ -427,6 +446,8 @@ def _valid_until(con: sqlite3.Connection) -> str | None:
 def _feed_info(con: sqlite3.Connection, op: str, day: date | None = None) -> dict[str, Any]:
     built = con.execute("SELECT value FROM meta WHERE key='built'").fetchone()
     info: dict[str, Any] = {"operator": OPERATORS[op]["name"], "timetable_loaded": built[0] if built else None}
+    if OPERATORS[op].get("attribution"):
+        info["attribution"] = OPERATORS[op]["attribution"]
     until = _valid_until(con)
     if until:
         info["timetable_valid_until"] = until
@@ -465,7 +486,8 @@ def transit_find_stops(
     Args:
         query: e.g. "Oriente", "Porto Campanhã", "Marquês de Pombal", "Prazeres".
         operator: an operator id (see transit_operators) or a city/region: "porto", "coimbra", "braga",
-            "aveiro", "cascais", "barreiro", "algarve", "faro", "madeira". Default: CP and the Lisbon operators.
+            "aveiro", "cascais", "barreiro", "algarve", "faro", "madeira", or "intercity" (FlixBus coaches
+            and CP). Default: CP and the Lisbon operators.
         lat, lon: find the nearest instead of (or as well as) by name.
     """
     try:
@@ -557,7 +579,8 @@ def transit_departures(
     Args:
         stop: station or stop name, e.g. "Lisboa Oriente", "Cais do Sodré", "Baixa-Chiado", "Prazeres".
         operator: an operator id (see transit_operators) or a city/region: "porto", "coimbra", "braga",
-            "aveiro", "cascais", "barreiro", "algarve", "faro", "madeira". Default: CP and the Lisbon operators.
+            "aveiro", "cascais", "barreiro", "algarve", "faro", "madeira", or "intercity" (FlixBus coaches
+            and CP). Default: CP and the Lisbon operators.
         when: ISO date-time in Lisbon time, e.g. "2026-11-03T08:00". Default: now.
         window_minutes: how far ahead to look (max 720).
         line: keep only a line or destination, e.g. "28E", "Sintra", "Azul".
@@ -587,6 +610,33 @@ def transit_departures(
         return fail(log, "transit_departures", exc)
 
 
+def _direct(con: sqlite3.Connection, a_ids: set[str], b_ids: set[str], start: datetime, t0: int, horizon: int) -> list[dict[str, Any]]:
+    am, bm = ",".join("?" * len(a_ids)), ",".join("?" * len(b_ids))
+    trips: list[dict[str, Any]] = []
+    for day, offset in ((start.date(), 0), (start.date() - timedelta(days=1), 86400)):
+        services = _active_services(con, day)
+        q = f"""
+            SELECT o.trip_id, o.dep AS dep, d.arr AS arr, t.service_id, t.short, t.headsign, r.short AS rshort, r.long AS rlong
+            FROM stop_times o JOIN stop_times d ON d.trip_id = o.trip_id AND d.seq > o.seq
+            JOIN trips t ON t.trip_id = o.trip_id JOIN routes r ON r.route_id = t.route_id
+            WHERE o.stop_id IN ({am}) AND d.stop_id IN ({bm}) AND o.dep BETWEEN ? AND ?
+            ORDER BY o.dep
+        """  # noqa: S608 — only placeholders are interpolated
+        for r in con.execute(q, [*a_ids, *b_ids, t0 + offset, t0 + offset + horizon * 60]):
+            if r["service_id"] not in services:
+                continue
+            trips.append({
+                "depart": _hhmm(r["dep"] - offset),
+                "arrive": _hhmm(r["arr"] - offset),
+                "duration_min": round((r["arr"] - r["dep"]) / 60),
+                "service": r["rshort"] or r["rlong"] or None,
+                "train_number": r["short"] or None,
+                "towards": r["headsign"] or None,
+                "_k": r["dep"] - offset,
+            })
+    return trips
+
+
 @mcp.tool()
 def transit_trips_between(
     origin: str,
@@ -602,7 +652,8 @@ def transit_trips_between(
     Metro "Alameda" → "Aeroporto" (same line only). Scheduled times, not live.
     Args:
         operator: an operator id (see transit_operators) or a city/region: "porto", "coimbra", "braga",
-            "aveiro", "cascais", "barreiro", "algarve", "faro", "madeira". Default: CP and the Lisbon operators.
+            "aveiro", "cascais", "barreiro", "algarve", "faro", "madeira", or "intercity" (FlixBus coaches
+            and CP). Default: CP and the Lisbon operators.
         when: ISO date-time in Lisbon time; default now.
         window_minutes: departures within this window (max 1440).
     """
@@ -614,33 +665,18 @@ def transit_trips_between(
         results = []
         for op in _ops(operator):
             con = _db(op)
-            a, b = _stations(con, origin, 1), _stations(con, destination, 1)
-            if not a or not b:
+            cands_a, cands_b = _stations(con, origin, 3), _stations(con, destination, 3)
+            if not cands_a or not cands_b:
                 continue
-            a_ids, b_ids = a[0]["stop_ids"], b[0]["stop_ids"]
-            am, bm = ",".join("?" * len(a_ids)), ",".join("?" * len(b_ids))
-            trips = []
-            for day, offset in ((start.date(), 0), (start.date() - timedelta(days=1), 86400)):
-                services = _active_services(con, day)
-                q = f"""
-                    SELECT o.trip_id, o.dep AS dep, d.arr AS arr, t.service_id, t.short, t.headsign, r.short AS rshort, r.long AS rlong
-                    FROM stop_times o JOIN stop_times d ON d.trip_id = o.trip_id AND d.seq > o.seq
-                    JOIN trips t ON t.trip_id = o.trip_id JOIN routes r ON r.route_id = t.route_id
-                    WHERE o.stop_id IN ({am}) AND d.stop_id IN ({bm}) AND o.dep BETWEEN ? AND ?
-                    ORDER BY o.dep
-                """  # noqa: S608 — only placeholders are interpolated
-                for r in con.execute(q, [*a_ids, *b_ids, t0 + offset, t0 + offset + horizon * 60]):
-                    if r["service_id"] not in services:
-                        continue
-                    trips.append({
-                        "depart": _hhmm(r["dep"] - offset),
-                        "arrive": _hhmm(r["arr"] - offset),
-                        "duration_min": round((r["arr"] - r["dep"]) / 60),
-                        "service": r["rshort"] or r["rlong"] or None,
-                        "train_number": r["short"] or None,
-                        "towards": r["headsign"] or None,
-                        "_k": r["dep"] - offset,
-                    })
+            # the best-named station may not be the one served (e.g. "Porto" -> Porto Airport): try the top 3 each way
+            trips: list[dict[str, Any]] = []
+            a, b = [cands_a[0]], [cands_b[0]]
+            for ca in cands_a:
+                for cb in cands_b:
+                    if trips:
+                        break
+                    a, b = [ca], [cb]
+                    trips = _direct(con, ca["stop_ids"], cb["stop_ids"], start, t0, horizon)
             trips.sort(key=lambda x: x["_k"])
             if trips or len(_ops(operator)) == 1:
                 results.append({
