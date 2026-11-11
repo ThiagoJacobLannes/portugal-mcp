@@ -747,3 +747,22 @@ def test_hosted_mode_moves_sync_tools_to_threads():
 
     out = anyio.run(go)
     assert "2026-12-25" in json.dumps(out, default=str)
+
+
+def test_dns_fallback_only_for_listed_hosts(monkeypatch):
+    import socket as _socket
+
+    from portugal_mcp import common
+
+    real = common._orig_getaddrinfo
+
+    def broken(host, *a, **k):
+        if host in ("geo.turismodeportugal.pt", "other.example.pt"):
+            raise _socket.gaierror(-5, "No address associated with hostname")
+        return real(host, *a, **k)
+
+    monkeypatch.setattr(common, "_orig_getaddrinfo", broken)
+    monkeypatch.setattr(common, "_doh_lookup", lambda host: ["127.0.0.1"])
+    assert _socket.getaddrinfo("geo.turismodeportugal.pt", 443)[0][4][0] == "127.0.0.1"
+    with pytest.raises(_socket.gaierror):
+        _socket.getaddrinfo("other.example.pt", 443)

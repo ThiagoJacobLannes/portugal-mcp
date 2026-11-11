@@ -8,12 +8,15 @@ import logging
 import math
 import os
 import re
+import socket
 import time
 import unicodedata
 from collections.abc import Callable
 from email.utils import parsedate_to_datetime
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlencode
+from urllib.request import urlopen
 
 import httpx
 from platformdirs import user_cache_dir
@@ -265,3 +268,39 @@ def like_pattern(text: str) -> str:
     become single-character wildcards ("São Vicente" also matches "SAO VICENTE")."""
     t = re.sub(r"[^a-z0-9 ]", " ", norm(text)).upper()
     return "%" + "%".join(re.sub(r"[AEIOUC]", "_", w) for w in t.split()) + "%"
+
+
+# Some public-data hosts have inconsistent DNS (their name servers sometimes answer with no address,
+# so a resolver caches "no such host" for minutes). For these hosts only, when the system resolver
+# fails, ask a public DNS-over-HTTPS resolver instead. This works around broken DNS, not access rules.
+DNS_FALLBACK_HOSTS = {"geo.turismodeportugal.pt"}
+_orig_getaddrinfo = socket.getaddrinfo
+_doh_cache: dict[str, tuple[float, list[str]]] = {}
+
+
+def _doh_lookup(host: str) -> list[str]:
+    hit = _doh_cache.get(host)
+    if hit and time.time() - hit[0] < 600:
+        return hit[1]
+    url = "https://dns.google/resolve?" + urlencode({"name": host, "type": "A"})
+    with urlopen(url, timeout=10) as r:  # noqa: S310 — fixed https URL
+        data = json.load(r)
+    ips = [a["data"] for a in data.get("Answer", []) if a.get("type") == 1]
+    _doh_cache[host] = (time.time(), ips)
+    return ips
+
+
+def _getaddrinfo(host, *args, **kwargs):  # type: ignore[no-untyped-def]
+    try:
+        return _orig_getaddrinfo(host, *args, **kwargs)
+    except socket.gaierror:
+        if host not in DNS_FALLBACK_HOSTS:
+            raise
+        ips = _doh_lookup(host)
+        if not ips:
+            raise
+        log.warning("system DNS failed for %s; using public DNS-over-HTTPS (%s)", host, ips[0])
+        return _orig_getaddrinfo(ips[0], *args, **kwargs)
+
+
+socket.getaddrinfo = _getaddrinfo

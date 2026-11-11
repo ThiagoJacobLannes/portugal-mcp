@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.6.1 — 2026-11-11
+
+- Tourism tools on the hosted endpoint: Turismo de Portugal's name servers sometimes return no address for geo.turismodeportugal.pt (Google's resolver gets one, Cloudflare's sometimes doesn't, and the failure is cached for minutes). For that host only, a failed lookup now falls back to public DNS-over-HTTPS.
+
 ## 0.6.0 — 2026-11-11
 
 - New `turismo` feature (Turismo de Portugal open data, CC BY): `local_accommodation` searches the national Alojamento Local register by number, name, address, postal code, municipality or distance; `tourism_places` lists Blue Flag beaches, surf spots, golf courses, spas, historic/schist/wine/mountain villages, walking routes, the Ways of Saint James, marinas, UNESCO sites and hotels. Owner and operator names are left out on purpose.
