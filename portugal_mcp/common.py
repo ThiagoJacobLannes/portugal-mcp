@@ -7,6 +7,7 @@ import json
 import logging
 import math
 import os
+import re
 import time
 import unicodedata
 from collections.abc import Callable
@@ -257,3 +258,10 @@ def download(url: str, dest: Path, *, timeout: float = 600) -> Path:
                 f.write(block)
     os.replace(tmp, dest)
     return dest
+
+
+def like_pattern(text: str) -> str:
+    """An ArcGIS/SQL LIKE pattern for UPPER(field) that ignores accents and case: vowels and 'c'
+    become single-character wildcards ("São Vicente" also matches "SAO VICENTE")."""
+    t = re.sub(r"[^a-z0-9 ]", " ", norm(text)).upper()
+    return "%" + "%".join(re.sub(r"[AEIOUC]", "_", w) for w in t.split()) + "%"

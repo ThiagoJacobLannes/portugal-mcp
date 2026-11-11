@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.6.0 — 2026-11-11
+
+- New `turismo` feature (Turismo de Portugal open data, CC BY): `local_accommodation` searches the national Alojamento Local register by number, name, address, postal code, municipality or distance; `tourism_places` lists Blue Flag beaches, surf spots, golf courses, spas, historic/schist/wine/mountain villages, walking routes, the Ways of Saint James, marinas, UNESCO sites and hotels. Owner and operator names are left out on purpose.
+- New `lisboa` feature (Câmara Municipal de Lisboa open data): `lisbon_events` (the city's cultural agenda, CC BY), `lisbon_street_works` (licensed occupations of public space, CC0, and road/pavement works in progress or planned) and `lisbon_recycling` (nearest recycling points by type).
+- FlixBus coaches in `transit` (`operator="flixbus"` or `"intercity"`, ODbL, attributed in every result), within Portugal and across Europe; "Lisboa" also finds stops named "Lisbon".
+- `transit_trips_between` tries the top three matching stations at each end, so "Porto" finds Campanhã when the airport stop has no direct service.
+- `open_data_search(organization=...)` finds town halls by town name ("Lisboa", "Cascais", "Oeiras") and no longer returns an unrelated body when the portal's search is loose (e.g. "INE").
+- New `electricity_price`: OMIE's day-ahead wholesale price for Portugal per 15 minutes, with computed average and cheapest periods. OMIE's terms allow free use if the content is unaltered and the source cited; its download files lag the market by about a day, which the tool says.
+- Not included, with reasons in the README: REN Data Hub (terms forbid reuse without consent), Porto road closures (stale).
+
 ## 0.5.0 — 2026-11-11
 
 - Timetables beyond Lisbon: Metro do Porto, TUB (Braga), SMTUC and SIT Metropolitano (Coimbra), Busway (Aveiro region), MobiCascais, TCB (Barreiro), Vamus and Próximo (Algarve), Horários do Funchal and the SIGA network (Madeira), all official GTFS. The transit tools take a city or region as `operator` ("porto", "coimbra", "madeira"...); with none they search CP and Lisbon as before.

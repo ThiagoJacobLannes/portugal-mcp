@@ -37,6 +37,8 @@ FEATURES = {
     "incendios": ".incendios",
     "ocorrencias": ".ocorrencias",
     "eletricidade": ".eletricidade",
+    "turismo": ".turismo",
+    "lisboa": ".lisboa",
 }
 
 

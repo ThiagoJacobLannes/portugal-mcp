@@ -10,7 +10,7 @@ from typing import Any
 from urllib.parse import urlparse
 
 from .app import mcp, note
-from .common import clamp, fail, get_json, http
+from .common import clamp, fail, get_json, http, norm
 
 log = logging.getLogger("portugal_mcp.dados")
 
@@ -41,25 +41,58 @@ def _dataset_row(d: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _org(name: str) -> dict[str, Any] | None:
+    """Find a publisher. Town halls publish under slugs like municipio-de-lisboa-1 or
+    camara-municipal-de-cascais, which the portal's search does not always surface, so try those."""
+    q = norm(name)
+    known = {"ine": "instituto-nacional-de-estatistica", "turismo de portugal": "turismo-de-portugal-i-p"}
+    if q in known:
+        r = http().get(f"{API}/organizations/{known[q]}/", timeout=20)
+        if r.status_code == 200:
+            return r.json()
+    city = re.sub(r"^(camara municipal|municipio|cm)\s+(de|do|da|dos|das)\s+", "", q).strip()
+    slug = re.sub(r"[^a-z0-9]+", "-", city).strip("-")
+    found: list[dict[str, Any]] = []
+    if slug:
+        for prefix in ("municipio-de", "municipio-do", "municipio-da", "camara-municipal-de", "camara-municipal-do", "camara-municipal-da"):
+            for suffix in ("", "-1"):
+                try:
+                    r = http().get(f"{API}/organizations/{prefix}-{slug}{suffix}/", timeout=20)
+                except Exception:  # noqa: BLE001 — best effort
+                    log.debug("organization slug probe failed", exc_info=True)
+                    continue
+                if r.status_code == 200:
+                    found.append(r.json())
+    if found:
+        return max(found, key=lambda o: (o.get("metrics") or {}).get("datasets") or 0)
+    orgs = get_json(f"{API}/organizations/", {"q": name, "page_size": 20}).get("data") or []
+    # the portal's organization search is loose ("INE" returns unrelated bodies): only accept a name match
+    exact = [o for o in orgs if norm(o.get("name")) == q]
+    named = [o for o in orgs if q in norm(o.get("name"))]
+    return (exact or named or [None])[0]
+
+
 @mcp.tool()
 def open_data_search(query: str, organization: str | None = None, limit: int = 10) -> dict[str, Any]:
     """Search the datasets of Portugal's national open-data portal (dados.gov.pt).
 
     Args:
         query: e.g. "acidentes rodoviários", "escolas", "qualidade do ar", "alojamento local".
-        organization: optional publisher name to filter by, e.g. "INE", "Câmara Municipal de Lisboa".
+        organization: optional publisher to filter by, e.g. "INE", "Lisboa" or "Câmara Municipal de
+            Cascais" (a town name finds its town hall's datasets: Lisboa, Porto, Cascais, Oeiras...).
         limit: max results (1-50).
     """
     try:
         params: dict[str, Any] = {"q": query, "page_size": clamp(limit, 1, 50, 10)}
         if organization:
-            orgs = get_json(f"{API}/organizations/", {"q": organization, "page_size": 1}).get("data") or []
-            if not orgs:
+            org = _org(organization)
+            if not org:
                 return {"error": f"no organization matches {organization!r}"}
-            params["organization"] = orgs[0]["id"]
+            params["organization"] = org["id"]
         d = get_json(f"{API}/datasets/", params)
         return {
             "query": query,
+            **({"organization": org.get("name")} if organization else {}),
             "total": d.get("total"),
             "datasets": [_dataset_row(x) for x in d.get("data") or []],
             "source": SOURCE,
