@@ -1,5 +1,9 @@
 # Changelog
 
+## Hosted endpoint — 2026-11-11
+
+- Rate limit: Claude's custom connectors (claude.ai, desktop, mobile) call MCP servers from Anthropic's published outbound addresses, so every claude.ai user shared one 60-a-minute budget. Those addresses now get 600 a minute; everyone else keeps 60 per IP. The "too many requests" message is clearer. Worker-only change, no new package version.
+
 ## 0.6.2 — 2026-11-11
 
 - Hosted endpoint stays warm: with `PORTUGAL_MCP_KEEP_WARM_HOURS` set (6 on the public endpoint), `--hosted` downloads and parses the large files (Parliament, public contracts, EV chargers, every timetable) in a background thread at start and every few hours, rebuilding any file that would expire before the next pass, and warms the Turismo de Portugal map server. A Worker cron pings the container every 10 minutes so it never sleeps (sleeping wiped its disk cache). Questions about contracts, Parliament or EV chargers no longer wait minutes for a cold file.
