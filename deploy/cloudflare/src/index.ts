@@ -3,11 +3,43 @@ import { Container, getContainer } from "@cloudflare/containers";
 interface Env {
   PORTUGAL_MCP: DurableObjectNamespace<PortugalMcp>;
   LIMITER: RateLimit;
+  LIMITER_CONNECTORS: RateLimit;
   FOGOS_API_KEY?: string;
 }
 
 const REPO = "https://github.com/ThiagoJacobLannes/portugal-mcp";
 const MAX_BODY = 64 * 1024; // MCP requests are small JSON-RPC messages
+
+// Claude's custom connectors (claude.ai, desktop, mobile) call MCP servers from Anthropic's servers,
+// so every claude.ai user arrives from these few addresses. They get their own, larger budget:
+// at 60 a minute per IP, a handful of people trying it at once would lock each other out.
+// Source: https://platform.claude.com/docs/en/api/ip-addresses (outbound, "MCP tool calls").
+const CONNECTOR_RANGES: [number, number][] = [cidr("160.79.104.0/21"), cidr("153.61.208.0/20")];
+const LIMIT = 60; // a minute, per client IP (wrangler.jsonc: LIMITER)
+const CONNECTOR_LIMIT = 600; // a minute, per Anthropic egress IP (wrangler.jsonc: LIMITER_CONNECTORS)
+
+function ipv4(ip: string): number | null {
+  const p = ip.split(".");
+  if (p.length !== 4) return null;
+  let n = 0;
+  for (const part of p) {
+    if (!/^\d{1,3}$/.test(part) || Number(part) > 255) return null;
+    n = n * 256 + Number(part);
+  }
+  return n;
+}
+
+function cidr(range: string): [number, number] {
+  const [base, bits] = range.split("/");
+  const size = 2 ** (32 - Number(bits));
+  const start = Math.floor((ipv4(base) ?? 0) / size) * size;
+  return [start, start + size];
+}
+
+function isClaudeConnector(ip: string): boolean {
+  const n = ipv4(ip);
+  return n !== null && CONNECTOR_RANGES.some(([lo, hi]) => n >= lo && n < hi);
+}
 
 /** The container: `portugal-mcp --hosted` (see the Dockerfile at the repo root). */
 export class PortugalMcp extends Container<Env> {
@@ -85,11 +117,15 @@ export default {
     if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: CORS });
 
     const ip = req.headers.get("CF-Connecting-IP") ?? "unknown";
-    const { success } = await env.LIMITER.limit({ key: `${name}:${ip}` });
+    const connector = isClaudeConnector(ip);
+    const limiter = connector ? env.LIMITER_CONNECTORS : env.LIMITER;
+    const { success } = await limiter.limit({ key: `${name}:${ip}` });
     if (!success) {
       return rpcError(
         429,
-        `Too many requests (limit: 60 a minute). Try again in a minute, or run your own copy: ${server.local} (${REPO}).`,
+        `The free shared endpoint is busy right now (over ${connector ? CONNECTOR_LIMIT : LIMIT} requests a minute ` +
+          `from this address). Please try again in a minute. For heavy use, run your own copy in seconds: ` +
+          `${server.local} (${REPO}).`,
         { "Retry-After": "60" },
       );
     }
