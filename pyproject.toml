@@ -4,8 +4,8 @@ build-backend = "hatchling.build"
 
 [project]
 name = "portugal-mcp"
-version = "0.6.2"
-description = "Portugal's public data for AI assistants in one MCP server: weather (IPMA), places, INE and Banco de Portugal statistics, Parliament, public contracts, dados.gov.pt, SNS health, medicines, fuel and EV charging, train/metro/bus timetables across Portugal, live buses, planned power cuts, tourism registers, Lisbon city data, wildfires."
+version = "0.7.0"
+description = "Portugal's public data for AI assistants in one MCP server: weather (IPMA), places, INE and Banco de Portugal statistics, Parliament, public contracts, dados.gov.pt, SNS health, medicines, fuel and EV charging, train/metro/bus timetables across Portugal, live buses, planned power cuts, tourism registers, Lisbon city data, wildfires, municipal holidays, the Arquivo.pt web archive."
 readme = "README.md"
 license = "MIT"
 requires-python = ">=3.10"

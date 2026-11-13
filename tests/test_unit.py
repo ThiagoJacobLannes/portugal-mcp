@@ -882,3 +882,74 @@ def test_ev_status_served_from_cache_while_refreshing(monkeypatch):
             break
         time.sleep(0.05)
     assert d.status["points"] == {"x": 1}
+
+
+# --- municipal holidays (SAPO) and Arquivo.pt ------------------------------------------
+
+SAPO_SAMPLE = """<GetAllHolidaysResponse xmlns="http://services.sapo.pt/Metadata/Holiday"><GetAllHolidaysResult>
+<Holiday><Name>Ano Novo</Name><Date>2026-01-01T00:00:00</Date><Description/><Type>National</Type></Holiday>
+<Holiday><Name>Feriado Municipal</Name><Date>2026-06-24T00:00:00</Date><Description/><Type>Municipal</Type>
+ <Municipality><Id>0303</Id><Name>Braga</Name></Municipality></Holiday>
+<Holiday><Name>Feriado Municipal</Name><Date>2026-08-21T00:00:00</Date><Description/><Type>Municipal</Type>
+ <Municipality><Id>3103</Id><Name>Funchal</Name></Municipality></Holiday>
+<Holiday><Name>Feriado Municipal</Name><Date>2026-04-22T00:00:00</Date><Description/><Type>Municipal</Type>
+ <Municipality><Id>4203</Id><Name>Ponta Delgada</Name></Municipality></Holiday>
+<Holiday><Name>Segunda-Feira do Espírito Santo</Name><Date>2026-05-25T00:00:00</Date><Description/><Type>Regional</Type></Holiday>
+<Holiday><Name>Feriado Regional da Região Autónoma da Madeira</Name><Date>2026-12-26T00:00:00</Date><Description/><Type>Regional</Type></Holiday>
+</GetAllHolidaysResult></GetAllHolidaysResponse>"""
+
+
+def test_sapo_holidays_parse_and_regions():
+    rows = geo.parse_sapo_holidays(SAPO_SAMPLE)
+    assert len(rows) == 5 and all(r["type"] in ("municipal", "regional") for r in rows)
+    assert [r["date"] for r in geo.local_holidays_for(rows, "0303")] == ["2026-06-24"]
+    assert {r["date"] for r in geo.local_holidays_for(rows, "3103")} == {"2026-08-21", "2026-12-26"}
+    assert {r["date"] for r in geo.local_holidays_for(rows, "4203")} == {"2026-04-22", "2026-05-25"}
+
+
+def test_public_holidays_with_municipality(monkeypatch):
+    munis = [{"name": "Braga", "dico": "0303", "district": "Braga", "parishes": []},
+             {"name": "Funchal", "dico": "3103", "district": "Ilha da Madeira", "parishes": []}]
+    monkeypatch.setattr(geo, "_municipalities", lambda: munis)
+    monkeypatch.setattr(geo, "_local_holidays", lambda y: geo.parse_sapo_holidays(SAPO_SAMPLE))
+    r = geo.public_holidays(2026, municipality="braga")
+    local = [h for h in r["holidays"] if h["type"] in ("municipal", "regional")]
+    assert r["municipality"]["ine_code"] == "0303" and [h["date"] for h in local] == ["2026-06-24"]
+    assert local[0]["weekday"] == "Wednesday" and "SAPO" in r["source"]
+    funchal = {h["date"] for h in geo.public_holidays(2026, municipality="Funchal")["holidays"] if h["type"] == "regional"}
+    assert funchal == {"2026-07-01", "2026-12-26"}  # Madeira Day added, SAPO only lists 26 December
+
+    def down(y):
+        raise OSError("down")
+
+    monkeypatch.setattr(geo, "_local_holidays", down)
+    r = geo.public_holidays(2026, municipality="Braga")
+    assert "warning" in r and all(h["type"] != "municipal" for h in r["holidays"])
+    assert "error" in geo.public_holidays(2026, municipality="Atlantis")
+
+
+def test_arquivo_dates_and_page_text():
+    from portugal_mcp import arquivo
+
+    assert arquivo._ts("2015") == "20150101000000" and arquivo._ts("2015-06", end=True) == "20150630235959"
+    assert arquivo._ts(2010, end=True) == "20101231235959"
+    with pytest.raises(ValueError):
+        arquivo._ts("2015-6")
+    title, text = arquivo.page_text("<html><head><title>Câmara &amp; Cidade</title><style>x{}</style></head>"
+                                    "<body><script>var a=1</script><p>Olá</p><div>Mundo  &nbsp; aqui</div></body></html>")
+    assert title == "Câmara & Cidade" and text == "Olá\nMundo aqui"
+
+
+def test_arquivo_history_summarises_versions(monkeypatch):
+    from portugal_mcp import arquivo
+
+    caps = [{"timestamp": ts, "url": "http://x.pt/", "digest": d}
+            for ts, d in [("20040101000000", "a"), ("20040201000000", "a"), ("20100101000000", "b"), ("20200101000000", "c")]]
+    monkeypatch.setattr(arquivo, "_cdx", lambda params: caps)
+    r = arquivo.web_archive_history("x.pt", max_versions=2)
+    assert r["captures"] == 4 and r["distinct_contents"] == 3
+    assert r["captures_per_year"] == {"2004": 2, "2010": 1, "2020": 1}
+    assert [v["date"][:4] for v in r["sample_versions"]] == ["2004", "2020"]
+    assert r["first"]["archive_link"] == "https://arquivo.pt/wayback/20040101000000/http://x.pt/"
+    monkeypatch.setattr(arquivo, "_cdx", lambda params: [])
+    assert arquivo.web_archive_history("x.pt")["captures"] == 0

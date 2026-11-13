@@ -10,14 +10,14 @@
 
 **Read-only, no API keys, no accounts.** Every answer comes from an official or public open-data source and says which one and for which date. Not affiliated with any of the sources.
 
-*Português:* servidor MCP com os dados públicos de Portugal (IPMA, INE, Banco de Portugal, Parlamento, Portal BASE, dados.gov.pt, SNS, Infarmed, DGEG, MOBI.E, Carris Metropolitana, horários da CP, de Lisboa, Porto, Coimbra, Braga, Aveiro, Cascais, Barreiro, Algarve e Madeira e da FlixBus, autocarros ao vivo no Porto, Coimbra e Lisboa, cortes de luz programados da E-REDES, registos do Turismo de Portugal (alojamento local, praias com bandeira azul, hotéis), agenda cultural, obras e reciclagem de Lisboa, incêndios do EFFIS, ocorrências da Proteção Civil). Só leitura, sem chaves. As ferramentas aceitam perguntas em português.
+*Português:* servidor MCP com os dados públicos de Portugal (IPMA, INE, Banco de Portugal, Parlamento, Portal BASE, dados.gov.pt, SNS, Infarmed, DGEG, MOBI.E, Carris Metropolitana, horários da CP, de Lisboa, Porto, Coimbra, Braga, Aveiro, Cascais, Barreiro, Algarve e Madeira e da FlixBus, autocarros ao vivo no Porto, Coimbra e Lisboa, cortes de luz programados da E-REDES, registos do Turismo de Portugal (alojamento local, praias com bandeira azul, hotéis), agenda cultural, obras e reciclagem de Lisboa, incêndios do EFFIS, ocorrências da Proteção Civil, feriados municipais, Arquivo.pt). Só leitura, sem chaves. As ferramentas aceitam perguntas em português.
 
 ## What it covers
 
 | Feature | Tools | Source |
 |---|---|---|
 | `clima` | `weather_forecast`, `weather_warnings`, `fire_risk`, `sea_forecast`, `earthquakes` | [IPMA](https://api.ipma.pt) |
-| `geo` | `postal_code`, `where_is`, `municipality`, `public_holidays` | [GeoAPI.pt](https://geoapi.pt) (CAOP, CTT, INE census); holidays computed from the Labour Code |
+| `geo` | `postal_code`, `where_is`, `municipality`, `public_holidays` (national, plus a concelho's municipal holiday and the Azores/Madeira regional ones) | [GeoAPI.pt](https://geoapi.pt) (CAOP, CTT, INE census); national holidays computed from the Labour Code, municipal ones from the [SAPO holiday service](https://services.sapo.pt/Metadata/Contract/Holiday?culture=PT) |
 | `ine` | `ine_search`, `ine_indicator` | [INE](https://www.ine.pt) indicator API |
 | `bpstat` | `bpstat_search`, `bpstat_series` | [Banco de Portugal BPstat](https://bpstat.bportugal.pt) |
 | `parlamento` | `parliament_search`, `parliament_initiative`, `parliament_votes`, `parliament_deputies` | [Assembleia da República open data](https://www.parlamento.pt/Cidadania/Paginas/DadosAbertos.aspx) |
@@ -33,8 +33,9 @@
 | `eletricidade` | `power_cuts` (planned interruptions by postal code, municipality or parish), `electricity_price` (day-ahead wholesale price for Portugal, per 15 minutes) | [E-REDES open data](https://e-redes.opendatasoft.com) (CC BY 4.0), [OMIE](https://www.omie.es) (free use, unaltered, source cited) |
 | `turismo` | `local_accommodation` (the Alojamento Local register: is it registered, how many on a street), `tourism_places` (Blue Flag beaches, surf spots, golf, spas, villages, walking routes, Ways of Saint James, marinas, UNESCO sites, hotels) | [Turismo de Portugal open data](https://dadosabertos.turismodeportugal.pt) (CC BY 4.0) |
 | `lisboa` | `lisbon_events` (the city's cultural agenda), `lisbon_street_works` (licensed occupations of public space, road and pavement works), `lisbon_recycling` (nearest ecoponto, vidrão, oleão...) | [Agenda Cultural de Lisboa](https://www.agendalx.pt) (CC BY), [Lisbon open data](https://geodados-cml.hub.arcgis.com) (CC0 for occupations) |
+| `arquivo` | `web_archive_search` (full-text search of archived Portuguese websites since 1996), `web_archive_history` (when an address was captured and how often it changed), `web_archive_page` (the text of a page as it was on a date) | [Arquivo.pt](https://arquivo.pt) (FCT), [API](https://github.com/arquivo/pwa-technologies/wiki/Arquivo.pt-API) |
 
-There are 56 tools in total. If your client struggles with that many, load only what you need with `PORTUGAL_MCP_FEATURES` (see below).
+There are 59 tools in total. If your client struggles with that many, load only what you need with `PORTUGAL_MCP_FEATURES` (see below).
 
 ### Things to know
 
@@ -129,6 +130,8 @@ Any client that runs stdio servers works: command `uvx`, args `["portugal-mcp"]`
 - "O que há para fazer em Lisboa este sábado, de graça?" / "Há obras na minha rua em Arroios?" / "Onde fica o oleão mais perto?"
 - "FlixBus de Lisboa para Madrid amanhã"
 - "Quanta área ardeu este ano no Algarve?"
+- "Amanhã é feriado em Braga?" / "Feriados de 2027 no Funchal"
+- "O que dizia o site da Câmara do Porto em 2005?" / "O que o Público escreveu sobre o Orçamento em 2010?"
 
 ## Development
 
