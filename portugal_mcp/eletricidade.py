@@ -28,7 +28,10 @@ note(
     "list of live faults: for an outage happening now, point to E-REDES (808 100 100 or "
     "balcaodigital.e-redes.pt). Give the date, start and end time and say it is planned. "
     "electricity_price gives OMIE's day-ahead wholesale price for Portugal in €/MWh, per 15 minutes: "
-    "it is not the retail tariff on a bill, though indexed ('dynamic') tariffs follow it. Cite OMIE.",
+    "it is not the retail tariff on a bill, though indexed ('dynamic') tariffs follow it. Cite OMIE. "
+    "electricity_grid gives a day's national consumption, peak and wind/solar/hydro generation on the "
+    "distribution grid (one day behind); electricity_local gives a municipality's or postal area's "
+    "monthly consumption and how often the power went out there. Mainland only (E-REDES).",
 )
 
 OMIE_FILE = "https://www.omie.es/es/file-download"
@@ -225,3 +228,159 @@ def electricity_price(day: str | None = None, cheapest: int = 4) -> dict[str, An
         return out
     except Exception as exc:  # noqa: BLE001
         return fail(log, "electricity_price", exc)
+
+
+ODS = "https://e-redes.opendatasoft.com/api/explore/v2.1/catalog/datasets"
+SRC_GRID = "E-REDES open data: national consumption and generation on the distribution grid, per 15 minutes (e-redes.opendatasoft.com, CC BY 4.0)"
+SRC_LOCAL = "E-REDES open data: billed consumption per municipality and postal code, and service-continuity indicators (e-redes.opendatasoft.com, CC BY 4.0)"
+DS_CONS = "consumo-total-nacional"
+DS_PROD = "energia-produzida-total-nacional"
+DS_INJ = "energia-injetada-na-rede-de-distribuicao"
+DS_MUNI = "3-consumos-faturados-por-municipio-ultimos-10-anos"
+DS_CP = "02-consumos-faturados-por-codigo-postal-ultimos-5-anos"
+DS_QOS = "12-continuidade-de-servico-indicadores-gerais-de-continuidade-de-servico"
+
+
+def _ods(dataset: str, **params: Any) -> list[dict[str, Any]]:
+    return get_json(f"{ODS}/{dataset}/records", params).get("results") or []
+
+
+def _gwh(kwh: Any) -> float | None:
+    return round(float(kwh) / 1e6, 2) if kwh is not None else None
+
+
+def latest_complete_day(last: dict[str, Any]) -> date:
+    """The newest row is often the first quarter-hour of a day; the day before is then the last full one."""
+    d = date.fromisoformat(last["date"])
+    return d if last.get("time") == "23:45" else date.fromordinal(d.toordinal() - 1)
+
+
+def shape_grid(day: date, cons: dict[str, Any], prod: dict[str, Any], inj: dict[str, Any]) -> dict[str, Any]:
+    renewable = sum(float(inj.get(k) or 0) for k in ("wind", "solar", "hydro"))
+    local = float(inj.get("total") or 0)
+    out: dict[str, Any] = {
+        "day": day.isoformat(),
+        "consumption_gwh": _gwh(cons.get("total")),
+        "consumption_by_voltage_gwh": {
+            "low (homes, small shops)": _gwh(cons.get("bt")),
+            "medium": _gwh(cons.get("mt")),
+            "high": _gwh(cons.get("at")),
+            "very high": _gwh(cons.get("mat")),
+        },
+        "peak_mw": round(float(cons["peak"]) * 4 / 1000) if cons.get("peak") is not None else None,
+        "supply_gwh": {
+            "from the transmission grid (REN)": _gwh(prod.get("dgm")),
+            "generated on the distribution grid": _gwh(prod.get("pre")),
+        },
+        "distribution_grid_generation_gwh": {
+            "wind": _gwh(inj.get("wind")),
+            "solar": _gwh(inj.get("solar")),
+            "hydro": _gwh(inj.get("hydro")),
+            "cogeneration": _gwh(inj.get("cogen")),
+            "other": _gwh(inj.get("other")),
+        },
+        "renewable_share_of_distribution_generation": round(renewable / local, 3) if local else None,
+    }
+    if int(cons.get("n") or 0) < 92:
+        out["warning"] = f"Only {cons.get('n')} of 96 quarter-hours are published for this day; totals are partial."
+    return out
+
+
+@mcp.tool()
+def electricity_grid(day: str | None = None) -> dict[str, Any]:
+    """How much electricity mainland Portugal used on a day, the peak, and how much wind, solar and
+    hydro the distribution grid generated (E-REDES, 15-minute data, usually one day behind).
+
+    Args:
+        day: "YYYY-MM-DD" (default: the latest complete day, usually yesterday).
+    Big power stations feed the transmission grid (REN) and show here only as one total.
+    """
+    try:
+        if day:
+            d = date.fromisoformat(day)
+        else:
+            last = _ods(DS_CONS, order_by="datahora desc", limit=1)
+            if not last:
+                raise ValueError("E-REDES returned no consumption data")
+            d = latest_complete_day(last[0])
+        where = f"date=date'{d.isoformat()}'"
+        cons = _ods(DS_CONS, where=where, limit=1, select="sum(total) as total,sum(bt) as bt,sum(mt) as mt,sum(at) as at,sum(mat) as mat,max(total) as peak,count(*) as n")
+        if not cons or not cons[0].get("n"):
+            raise ValueError(f"no data for {d.isoformat()} (the series starts in 2023 and runs about a day behind)")
+        prod = _ods(DS_PROD, where=where, limit=1, select="sum(dgm) as dgm,sum(pre) as pre")
+        inj = _ods(DS_INJ, where=where, limit=1, select="sum(eolica) as wind,sum(fotovoltaica) as solar,sum(hidrica) as hydro,sum(cogeracao) as cogen,sum(outras_tecnologias) as other,sum(rede_dist) as total")
+        return {**shape_grid(d, cons[0], (prod or [{}])[0], (inj or [{}])[0]), "source": SRC_GRID}
+    except Exception as exc:  # noqa: BLE001
+        return fail(log, "electricity_grid", exc)
+
+
+def _r(v: Any, nd: int) -> float:
+    return round(float(v or 0), nd)
+
+
+def _continuity(dico: str) -> dict[str, Any] | None:
+    rows = _ods(DS_QOS, where=f"codigo_concelho='{dico}' and zona_rqs='Concelho'", order_by="ano desc", limit=5)
+    if not rows:
+        return None
+    year = rows[0]["ano"]
+    nat = _ods(DS_QOS, where=f"zona_rqs='Concelho' and ano='{year}'", limit=1, select="avg(saidi_bt_min) as saidi,avg(saifi_bt_num) as saifi")
+    nat = nat[0] if nat else {}
+    return {
+        "year": year,
+        "minutes_without_power_per_customer": _r(rows[0].get("saidi_bt_min"), 1),
+        "interruptions_per_customer": _r(rows[0].get("saifi_bt_num"), 2),
+        "short_interruptions_medium_voltage": _r(rows[0].get("maifi_mt_num"), 2),
+        "mainland_municipality_average": {
+            "minutes_without_power_per_customer": _r(nat.get("saidi"), 1),
+            "interruptions_per_customer": _r(nat.get("saifi"), 2),
+        },
+        "previous_years": [
+            {"year": r["ano"], "minutes_without_power_per_customer": _r(r.get("saidi_bt_min"), 1), "interruptions_per_customer": _r(r.get("saifi_bt_num"), 2)}
+            for r in rows[1:]
+        ],
+        "meaning": "Per low-voltage customer (homes, small shops) over the year: long interruptions (over 3 minutes), planned and unplanned.",
+    }
+
+
+@mcp.tool()
+def electricity_local(municipality: str | None = None, postal_code: str | None = None, months: int = 12) -> dict[str, Any]:
+    """Electricity in one place (mainland Portugal): billed consumption per month, and how often and
+    for how long the power went out there in recent years compared with the average municipality.
+
+    Args:
+        municipality: a concelho, e.g. "Sintra".
+        postal_code: "2710" or "2710-123" (consumption is published per 4-digit area); its
+            municipality is used for the outage figures.
+        months: how many recent months of consumption (max 60).
+    """
+    try:
+        from . import geo
+
+        if not municipality and not postal_code:
+            raise ValueError("give a municipality or a postal code")
+        n = clamp(months, 1, 60, 12)
+        out: dict[str, Any] = {}
+        if postal_code:
+            cp4 = re.sub(r"\D", "", postal_code)[:4]
+            if len(cp4) != 4:
+                raise ValueError("postal codes look like '2710' or '2710-123'")
+            rows = _ods(DS_CP, where=f"codigopostal='{cp4}'", order_by="date desc", limit=n)
+            out["postal_area"] = cp4
+            out["consumption_mwh_by_month"] = [{"month": r["date"], "mwh": _r((r.get("energiaativa") or 0) / 1000, 1)} for r in rows]
+            if not municipality:
+                pc = geo.postal_code(cp4)
+                municipality = pc.get("municipality") if isinstance(pc, dict) else None
+        if municipality:
+            m = geo.municipality_code(municipality)
+            out["municipality"] = {"name": m["name"], "ine_code": m["dico"]}
+            if m["dico"][:2] in ("31", "32") or m["dico"][:1] == "4":
+                out["warning"] = "The Azores and Madeira have their own utilities (EDA, EEM); E-REDES covers mainland Portugal only."
+            else:
+                if not postal_code:
+                    rows = _ods(DS_MUNI, where=f"coddistritoconcelho='{m['dico']}'", group_by="data", select="data,sum(energia_ativa_kwh) as kwh", order_by="data desc", limit=n)
+                    out["consumption_mwh_by_month"] = [{"month": str(r["data"])[:7], "mwh": _r((r.get("kwh") or 0) / 1000, 1)} for r in rows]
+                out["power_outages"] = _continuity(m["dico"])
+        out["source"] = SRC_LOCAL
+        return out
+    except Exception as exc:  # noqa: BLE001
+        return fail(log, "electricity_local", exc)

@@ -10,6 +10,7 @@ import threading
 import time
 from datetime import date, datetime, timedelta, timezone
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from .app import mcp, note
 from .common import clamp, fail, get_json, haversine_km, http, like_pattern, norm
@@ -37,7 +38,8 @@ note(
     "Lisbon city tools: lisbon_events (the city's cultural agenda: exhibitions, concerts, theatre, "
     "guided visits, mostly with dates, venue and price), lisbon_street_works (licensed occupations "
     "of public space such as filming, events and scaffolding, plus the city's road and pavement "
-    "works in progress or planned) and lisbon_recycling (the nearest recycling points by type). "
+    "works in progress or planned), lisbon_recycling (the nearest recycling points by type) and "
+    "lisbon_metro_status (is each Metro line running normally right now). "
     "These cover the Lisboa municipality only.",
 )
 
@@ -285,3 +287,40 @@ def lisbon_recycling(
         return {"kind": RECYCLING[layer], "found": len(rows), "points": rows[:n], "source": SRC_CML}
     except Exception as exc:  # noqa: BLE001
         return fail(log, "lisbon_recycling", exc)
+
+
+METRO_STATUS = "https://app.metrolisboa.pt/status/getLinhas.php"
+SRC_METRO = "Metropolitano de Lisboa, line status published on metrolisboa.pt (app.metrolisboa.pt)"
+METRO_LINES = {"amarela": "Amarela (Yellow)", "azul": "Azul (Blue)", "verde": "Verde (Green)", "vermelha": "Vermelha (Red)"}
+
+
+def shape_metro(data: dict[str, Any]) -> list[dict[str, Any]]:
+    resp = data.get("resposta") or {}
+    rows = []
+    for key, name in METRO_LINES.items():
+        text = re.sub(r"\s+", " ", html.unescape(str(resp.get(key) or ""))).strip()
+        normal = norm(text) in ("ok", "")
+        rows.append({"line": name, "normal_service": normal, "status": "Normal service" if normal else text})
+    return rows
+
+
+@mcp.tool()
+def lisbon_metro_status() -> dict[str, Any]:
+    """Is the Lisbon Metro running normally right now? Status of the four lines (Amarela, Azul,
+    Verde, Vermelha) as Metropolitano de Lisboa publishes it, with the disruption text if any.
+
+    For timetables use transit_departures with operator "metro".
+    """
+    try:
+        data = http().get(METRO_STATUS, timeout=20).json()
+        if str(data.get("codigo")) != "200":
+            raise ValueError(f"the Metro status service answered code {data.get('codigo')}")
+        lines = shape_metro(data)
+        return {
+            "as_of": datetime.now(ZoneInfo("Europe/Lisbon")).strftime("%Y-%m-%d %H:%M"),
+            "all_normal": all(x["normal_service"] for x in lines),
+            "lines": lines,
+            "source": SRC_METRO,
+        }
+    except Exception as exc:  # noqa: BLE001
+        return fail(log, "lisbon_metro_status", exc)

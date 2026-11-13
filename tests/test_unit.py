@@ -953,3 +953,116 @@ def test_arquivo_history_summarises_versions(monkeypatch):
     assert r["first"]["archive_link"] == "https://arquivo.pt/wayback/20040101000000/http://x.pt/"
     monkeypatch.setattr(arquivo, "_cdx", lambda params: [])
     assert arquivo.web_archive_history("x.pt")["captures"] == 0
+
+
+# --- Porto city data, Lisbon Metro status, E-REDES grid and local ---------------------
+
+PLANNED_CSV = """'tipo_de_condicionamento','troco','motivo','data_de_inicio','data_de_fim','observacoes','data_de_registo','latitude','longitude','objectid','topo','esriGeometryPolygon'
+'Corte total','entre o n.º 1 e o n.º 9','Obras públicas','2026-11-10','2026-11-20','','2026-11-01','41.15','-8.61',1,'Rua de Santa Catarina','[]'
+'Estacionamento','','Eventos e lazer','2026-01-01','2026-01-02','','2025-12-01','41.16','-8.62',2,'Rua Antiga','[]'
+'Estreitamento','','Cargas e descargas','','','','','41.15','-8.61',3,'Rua Sem Datas','[]'
+'Estreitamento','','Outro motivo','2026-11-10','2026-11-30','TESTE-PLAYWRIGHT-obs-1','','41.15','-8.61',4,'Rua Teste','[]'
+"""
+UNPLANNED_CSV = """'motivo','arruamento','troco','entidade','tipo_de_condicionamento','data_de_início','hora_de_inicio','data_de_fim','hora_de_fim','observacoes','registo_data','coordenada_x','coordenada_y','registo_hora','ultima_modificacao_data','ultima_modificacao_hora','objectid','esriGeometryPoint'
+'Rotura de conduta','Rua do Bonjardim','','','Corte total',1794873600000,32400000,1795046400000,64800000,'',1794873600000,-8.6105,41.1502,0,0,0,1,'0,0'
+"""
+
+
+def test_porto_closures_parse_and_filter():
+    import io
+
+    from portugal_mcp import porto
+
+    keep = date(2026, 11, 12)
+    planned = porto.parse_planned(io.StringIO(PLANNED_CSV), keep)
+    assert [r["street"] for r in planned] == ["Rua de Santa Catarina"]  # old, undated and test rows dropped
+    unplanned = porto.parse_unplanned(io.StringIO(UNPLANNED_CSV), keep)
+    assert unplanned[0]["start"] == "2026-11-17" and unplanned[0]["start_time"] == "09:00" and unplanned[0]["end_time"] == "18:00"
+    rows = planned + unplanned
+    assert len(porto.active_on(rows, date(2026, 11, 18))) == 2
+    assert len(porto.active_on(rows, date(2026, 11, 14))) == 1
+
+
+def test_porto_road_closures_tool(monkeypatch):
+    import io
+
+    from portugal_mcp import porto
+
+    rows = porto.parse_planned(io.StringIO(PLANNED_CSV), date(2026, 1, 1)) + porto.parse_unplanned(io.StringIO(UNPLANNED_CSV), date(2026, 1, 1))
+    monkeypatch.setattr(porto, "_all_closures", lambda: rows)
+    r = porto.porto_road_closures(near="santa catarina", day="2026-11-18")
+    assert r["count"] == 1 and r["restrictions"][0]["reason"] == "Obras públicas"
+    r = porto.porto_road_closures(lat=41.1502, lon=-8.6105, radius_km=0.2, day="2026-11-18")
+    assert r["restrictions"][0]["street"] == "Rua do Bonjardim" and r["restrictions"][0]["distance_m"] == 0
+    r = porto.porto_road_closures(day="2026-11-18", kind="unplanned")
+    assert r["count"] == 1 and r["by_reason"] == {"Rotura de conduta": 1}
+    assert "error" in porto.porto_road_closures(kind="nope")
+
+
+def test_porto_sensors_keep_fresh_readings_only():
+    from datetime import datetime, timezone
+
+    from portugal_mcp import porto
+
+    now = datetime(2026, 11, 13, 22, 30, tzinfo=timezone.utc)
+    ents = [
+        {"id": "a", "name": "Aliados", "dateObserved": "2026-11-13T22:15:00.00Z", "location": {"coordinates": [-8.61, 41.15]}, "pm25": 7, "no2": 30.5, "junk": "x"},
+        {"id": "b", "name": "Old", "dateObserved": "2022-11-18T14:40:00.00Z", "location": {"coordinates": [-8.6, 41.1]}, "pm25": 9},
+    ]
+    rows, stale = porto.shape_sensors("air", ents, now)
+    assert stale == 1 and rows[0]["sensor"] == "Aliados" and rows[0]["readings"] == {"pm25": 7, "no2": 30.5}
+    assert rows[0]["observed"] == "2026-11-13 22:15"
+
+
+def test_lisbon_metro_status_shape():
+    from portugal_mcp import lisboa
+
+    rows = lisboa.shape_metro({"resposta": {"amarela": " Ok", "azul": "Circulação interrompida entre Baixa-Chiado e Santa Apolónia", "verde": " Ok", "vermelha": " Ok"}, "codigo": "200"})
+    assert [r["normal_service"] for r in rows] == [True, False, True, True]
+    assert rows[1]["status"].startswith("Circulação interrompida")
+
+
+def test_electricity_grid_shape():
+    from portugal_mcp import eletricidade as e
+
+    assert e.latest_complete_day({"date": "2026-11-12", "time": "00:00"}) == date(2026, 11, 11)
+    assert e.latest_complete_day({"date": "2026-11-12", "time": "23:45"}) == date(2026, 11, 12)
+    out = e.shape_grid(
+        date(2026, 11, 11),
+        {"total": 154448053.9, "bt": 79149439.8, "mt": 49548152.5, "at": 19689836.3, "mat": 6060625.2, "peak": 1924988.98, "n": 96},
+        {"dgm": 123896577.0, "pre": 30551477.0},
+        {"wind": 24048152.0, "solar": 50031.0, "hydro": 643958.0, "cogen": 2518241.0, "other": 3291095.0, "total": 30551477.0},
+    )
+    assert out["consumption_gwh"] == 154.45 and out["peak_mw"] == 7700
+    assert out["renewable_share_of_distribution_generation"] == 0.81 and "warning" not in out
+    assert "warning" in e.shape_grid(date(2026, 11, 11), {"total": 1, "n": 40}, {}, {})
+
+
+def test_electricity_local(monkeypatch):
+    from portugal_mcp import eletricidade as e
+
+    monkeypatch.setattr(geo, "_municipalities", lambda: [
+        {"name": "Sintra", "dico": "1111", "district": "Lisboa", "parishes": []},
+        {"name": "Funchal", "dico": "3103", "district": "Ilha da Madeira", "parishes": []},
+    ])
+    calls = []
+
+    def ods(dataset, **params):
+        calls.append(dataset)
+        if dataset == e.DS_MUNI:
+            return [{"data": "2026-07-01T00:00:00+00:00", "kwh": 83164144.9}]
+        if dataset == e.DS_QOS and "codigo_concelho" in params.get("where", ""):
+            return [{"ano": "2025", "saidi_bt_min": 160.96, "saifi_bt_num": 1.3236, "maifi_mt_num": 2.8}, {"ano": "2024", "saidi_bt_min": 145.5, "saifi_bt_num": 1.47}]
+        if dataset == e.DS_QOS:
+            return [{"saidi": 92.24, "saifi": 1.9158}]
+        return []
+
+    monkeypatch.setattr(e, "_ods", ods)
+    r = e.electricity_local(municipality="Sintra")
+    assert r["consumption_mwh_by_month"] == [{"month": "2026-07", "mwh": 83164.1}]
+    po = r["power_outages"]
+    assert po["minutes_without_power_per_customer"] == 161.0 and po["mainland_municipality_average"]["minutes_without_power_per_customer"] == 92.2
+    assert po["previous_years"][0]["year"] == "2024"
+    calls.clear()
+    assert "warning" in e.electricity_local(municipality="Funchal") and calls == []
+    assert "error" in e.electricity_local()

@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.8.0 — 2026-11-13
+
+- New `porto` feature (Câmara Municipal do Porto open data): `porto_road_closures` lists the streets with traffic or parking restrictions active on a day, planned (works, events, loading, scaffolding) and unplanned (accidents, burst pipes, fallen trees), by street name, Porto postal code or point; the city files are refreshed daily (they had looked frozen in 2024, which is why this was left out before). `porto_sensors` gives the latest readings of the city's air-quality, noise and weather sensors (Porto Digital urban platform, CC0), skipping sensors that stopped reporting.
+- `lisbon_metro_status`: whether each Lisbon Metro line is running normally right now, with the disruption text when not, as Metropolitano de Lisboa publishes it.
+- `electricity_grid`: a day's mainland consumption (total, by voltage, 15-minute peak), supply from the transmission grid versus generation on the distribution grid, and its wind/solar/hydro split (E-REDES, about a day behind). `electricity_local`: monthly billed consumption of a municipality or 4-digit postal area, plus its yearly outage indicators (minutes without power and interruptions per customer) against the average mainland municipality. 64 tools.
+
 ## 0.7.0 — 2026-11-13
 
 - `public_holidays` takes an optional `municipality`: it adds that concelho's own holiday (all 308, from the SAPO holiday service, moveable ones computed per year) and, in the Azores and Madeira, the regional holidays (Madeira Day, 1 July, is added because SAPO lists only 26 December). If SAPO is down, the national list still comes back with a warning.
