@@ -232,9 +232,11 @@ UNITS = {"pm25": "µg/m³", "pm10": "µg/m³", "no2": "µg/m³", "o3": "µg/m³"
 
 
 def _when(s: str | None) -> datetime | None:
+    """FIWARE timestamps ('2026-11-13T22:15:00.00Z'); Python 3.10 rejects 2-digit fractions, so drop them."""
+    text = re.sub(r"\.\d+", "", str(s or "")).replace("Z", "+00:00")
     try:
-        return datetime.fromisoformat(str(s).replace("Z", "+00:00"))
-    except (TypeError, ValueError):
+        return datetime.fromisoformat(text)
+    except ValueError:
         return None
 
 
