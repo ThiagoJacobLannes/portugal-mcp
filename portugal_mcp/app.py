@@ -5,7 +5,7 @@ from __future__ import annotations
 from mcp.server.fastmcp import FastMCP
 
 BASE_INSTRUCTIONS = (
-    "Portugal's public data in one server: weather and warnings (IPMA), places and postal codes, "
+    "Portugal's public data in one server: weather and warnings (IPMA), places, postal codes and holidays (national and municipal), "
     "official statistics (INE, Banco de Portugal), Parliament, public contracts, the national "
     "open-data portal, the health service (SNS), medicines and pharmacies, fuel and EV charging, "
     "Lisbon-area buses, train, metro, bus and tram timetables (CP, Lisbon, Porto, Coimbra, Braga, "
@@ -13,7 +13,7 @@ BASE_INSTRUCTIONS = (
     "Coimbra, Lisbon), tourism registers (local accommodation, Blue Flag beaches, hotels, surf, "
     "routes), Lisbon city data (events, street works, recycling), the day-ahead electricity price (OMIE), "
     "planned power cuts (E-REDES), wildfire burnt areas (EFFIS) and live civil-protection incidents "
-    "(ANEPC). Everything is read-only public data. Answer in the user's language and "
+    "(ANEPC), and Arquivo.pt, the archive of Portuguese websites since 1996. Everything is read-only public data. Answer in the user's language and "
     "always say which source and which date or period each figure comes from."
 )
 

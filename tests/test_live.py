@@ -173,3 +173,18 @@ def test_active_incidents():
 
     r = ok(ocorrencias.active_incidents())
     assert "count" in r and "by_district" in r
+
+
+def test_municipal_holidays():
+    from portugal_mcp import geo
+
+    r = ok(geo.public_holidays(municipality="Braga"))
+    assert any(h["type"] == "municipal" for h in r["holidays"]), r
+
+
+def test_arquivo():
+    from portugal_mcp import arquivo
+
+    assert ok(arquivo.web_archive_search("orçamento", site="publico.pt", from_date="2010", to_date="2010", limit=2))["results"]
+    assert ok(arquivo.web_archive_history("cm-lisboa.pt", to_date="2005"))["captures"] > 0
+    assert ok(arquivo.web_archive_page("cm-lisboa.pt", when="2005", max_chars=300))["text"]

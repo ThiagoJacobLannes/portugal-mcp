@@ -8,8 +8,10 @@ import time
 from datetime import date, timedelta
 from typing import Any
 
+import defusedxml.ElementTree as ET
+
 from .app import mcp, note
-from .common import fail, get_json, norm
+from .common import fail, get_json, http, norm
 
 log = logging.getLogger("portugal_mcp.geo")
 
@@ -19,8 +21,8 @@ SOURCE = "GeoAPI.pt (official CAOP boundaries, CTT postal codes, INE census)"
 note(
     "geo",
     "Place tools: postal_code for 'XXXX-XXX', where_is for coordinates, municipality for a concelho "
-    "(parishes, census, contacts of the town hall). public_holidays covers national holidays only; "
-    "each municipality also has its own holiday.",
+    "(parishes, census, contacts of the town hall). public_holidays gives the national holidays; "
+    "pass municipality to add that concelho's own holiday (and the Azores or Madeira regional ones).",
 )
 
 _mem: dict[str, tuple[float, Any]] = {}
@@ -208,23 +210,107 @@ def holidays(year: int) -> list[dict[str, Any]]:
     return rows
 
 
-@mcp.tool()
-def public_holidays(year: int | None = None, upcoming_only: bool = False) -> dict[str, Any]:
-    """Portugal's national public holidays for a year (default: this year), with weekday.
+SAPO_HOLIDAYS = "https://services.sapo.pt/Holiday/GetAllHolidays"
+SAPO_NS = "{http://services.sapo.pt/Metadata/Holiday}"
+SRC_NATIONAL = "Código do Trabalho, art. 234 (computed; Easter-based dates via the Gregorian computus)"
+SRC_LOCAL = "SAPO Holiday service (services.sapo.pt): the holiday each town hall set"
+# Regional holidays carry no municipality in SAPO's data: they apply to a whole autonomous region,
+# which INE codes by district (Madeira 31-32, Azores 41-49).
+REGIONS = {"madeira": ("31", "32"), "acores": tuple(str(d) for d in range(41, 50))}
 
-    Carnival is listed as optional: it is usually a day off by government decision, not by law.
-    Municipal holidays (one per concelho, e.g. Lisbon 13 June, Porto 24 June) are not included.
+
+def parse_sapo_holidays(xml_text: str) -> list[dict[str, Any]]:
+    """SAPO's yearly XML -> [{date, name, description, type, dico, municipality}], municipal and regional rows only."""
+    rows = []
+    for h in ET.fromstring(xml_text).iter(f"{SAPO_NS}Holiday"):
+        kind = (h.findtext(f"{SAPO_NS}Type") or "").lower()
+        if kind not in ("municipal", "regional"):
+            continue
+        m = h.find(f"{SAPO_NS}Municipality")
+        rows.append({
+            "date": (h.findtext(f"{SAPO_NS}Date") or "")[:10],
+            "name": (h.findtext(f"{SAPO_NS}Name") or "").strip(),
+            "description": (h.findtext(f"{SAPO_NS}Description") or "").strip(),
+            "type": kind,
+            "dico": m.findtext(f"{SAPO_NS}Id") if m is not None else None,
+            "municipality": m.findtext(f"{SAPO_NS}Name") if m is not None else None,
+        })
+    return rows
+
+
+def _local_holidays(year: int) -> list[dict[str, Any]]:
+    key = f"_sapo_{year}"
+    hit = _mem.get(key)
+    if hit and time.time() - hit[0] < 7 * 86400:
+        return hit[1]
+    r = http().get(SAPO_HOLIDAYS, params={"year": year}, headers={"Accept": "text/xml"})
+    r.raise_for_status()
+    rows = parse_sapo_holidays(r.text)
+    if not rows:
+        raise ValueError("the SAPO holiday service returned no municipal holidays")
+    _mem[key] = (time.time(), rows)
+    return rows
+
+
+def local_holidays_for(rows: list[dict[str, Any]], dico: str) -> list[dict[str, Any]]:
+    """The municipal holidays of one concelho plus the regional ones of its autonomous region."""
+    out = [r for r in rows if r["type"] == "municipal" and r["dico"] == dico]
+    for r in rows:
+        if r["type"] != "regional":
+            continue
+        text = norm(f"{r['name']} {r['description']}")
+        region = "madeira" if "madeira" in text else "acores" if ("acores" in text or "espirito santo" in text) else None
+        if region and dico[:2] in REGIONS[region]:
+            out.append(r)
+    return out
+
+
+@mcp.tool()
+def public_holidays(year: int | None = None, upcoming_only: bool = False, municipality: str | None = None) -> dict[str, Any]:
+    """Portugal's public holidays for a year (default: this year), with weekday.
+
+    Always lists the national holidays. Pass `municipality` (a concelho, e.g. "Braga", "Lisboa",
+    "Funchal") to add its own municipal holiday and, in the Azores or Madeira, the regional ones:
+    that answers "is tomorrow a holiday in Braga?". Carnival is listed as optional: it is usually
+    a day off by government decision, not by law.
     """
     try:
         y = int(year or date.today().year)
         if not 1900 <= y <= 2200:
             raise ValueError("year out of range")
         today = date.today()
-        rows = [
+        rows = list(holidays(y))
+        out: dict[str, Any] = {"year": y}
+        source = SRC_NATIONAL
+        if municipality:
+            m = municipality_code(municipality)
+            out["municipality"] = {"name": m["name"], "district": m["district"], "ine_code": m["dico"]}
+            try:
+                local = local_holidays_for(_local_holidays(y), m["dico"])
+                rows += [
+                    {
+                        "date": date.fromisoformat(r["date"]),
+                        "name_pt": r["name"],
+                        "name_en": "Municipal holiday" if r["type"] == "municipal" else "Regional holiday",
+                        "type": r["type"],
+                    }
+                    for r in local
+                ]
+                if m["dico"][:2] in REGIONS["madeira"] and not any(r["date"].month == 7 and r["date"].day == 1 for r in rows):
+                    # SAPO lists only 26 December; Madeira Day (1 July) is a regional holiday too.
+                    rows.append({"date": date(y, 7, 1), "name_pt": "Dia da Região Autónoma da Madeira e das Comunidades Madeirenses", "name_en": "Madeira Day", "type": "regional"})
+                source = f"{SRC_NATIONAL}; {SRC_LOCAL}"
+                if not any(r["type"] == "municipal" for r in local):
+                    out["warning"] = f"No municipal holiday found for {m['name']}; check the town hall's website."
+            except Exception as exc:  # noqa: BLE001
+                log.warning("municipal holidays unavailable: %s", exc)
+                out["warning"] = f"Municipal holidays are unavailable right now ({type(exc).__name__}); only the national ones are listed."
+        out["holidays"] = [
             {**r, "date": r["date"].isoformat(), "weekday": r["date"].strftime("%A")}
-            for r in holidays(y)
+            for r in sorted(rows, key=lambda r: r["date"])
             if not upcoming_only or r["date"] >= today
         ]
-        return {"year": y, "holidays": rows, "source": "Código do Trabalho, art. 234 (computed; Easter-based dates via the Gregorian computus)"}
+        out["source"] = source
+        return out
     except Exception as exc:  # noqa: BLE001
         return fail(log, "public_holidays", exc)

@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.7.0 — 2026-11-13
+
+- `public_holidays` takes an optional `municipality`: it adds that concelho's own holiday (all 308, from the SAPO holiday service, moveable ones computed per year) and, in the Azores and Madeira, the regional holidays (Madeira Day, 1 July, is added because SAPO lists only 26 December). If SAPO is down, the national list still comes back with a warning.
+- New `arquivo` feature, Arquivo.pt (the Portuguese web archive, FCT): `web_archive_search` (full-text search of archived pages by words, site and period), `web_archive_history` (first and last capture of an address, captures per year, versions where the content changed) and `web_archive_page` (the readable text of a page as saved closest to a date, capped at 8,000 characters, with the archive link). 59 tools.
+
 ## Hosted endpoint — 2026-11-11
 
 - Rate limit: Claude's custom connectors (claude.ai, desktop, mobile) call MCP servers from Anthropic's published outbound addresses, so every claude.ai user shared one 60-a-minute budget. Those addresses now get 600 a minute; everyone else keeps 60 per IP. The "too many requests" message is clearer. Worker-only change, no new package version.
