@@ -188,3 +188,24 @@ def test_arquivo():
     assert ok(arquivo.web_archive_search("orçamento", site="publico.pt", from_date="2010", to_date="2010", limit=2))["results"]
     assert ok(arquivo.web_archive_history("cm-lisboa.pt", to_date="2005"))["captures"] > 0
     assert ok(arquivo.web_archive_page("cm-lisboa.pt", when="2005", max_chars=300))["text"]
+
+
+def test_porto():
+    from portugal_mcp import porto
+
+    assert ok(porto.porto_road_closures())["count"] > 0
+    r = ok(porto.porto_sensors())
+    assert r["air"]["sensors"] or r["noise"]["sensors"] or r["weather"]["sensors"], r
+
+
+def test_lisbon_metro_status():
+    from portugal_mcp import lisboa
+
+    assert len(ok(lisboa.lisbon_metro_status())["lines"]) == 4
+
+
+def test_electricity_grid_and_local():
+    from portugal_mcp import eletricidade
+
+    assert ok(eletricidade.electricity_grid())["consumption_gwh"] > 50
+    assert ok(eletricidade.electricity_local(municipality="Sintra", months=2))["power_outages"]

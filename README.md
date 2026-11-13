@@ -10,7 +10,7 @@
 
 **Read-only, no API keys, no accounts.** Every answer comes from an official or public open-data source and says which one and for which date. Not affiliated with any of the sources.
 
-*Português:* servidor MCP com os dados públicos de Portugal (IPMA, INE, Banco de Portugal, Parlamento, Portal BASE, dados.gov.pt, SNS, Infarmed, DGEG, MOBI.E, Carris Metropolitana, horários da CP, de Lisboa, Porto, Coimbra, Braga, Aveiro, Cascais, Barreiro, Algarve e Madeira e da FlixBus, autocarros ao vivo no Porto, Coimbra e Lisboa, cortes de luz programados da E-REDES, registos do Turismo de Portugal (alojamento local, praias com bandeira azul, hotéis), agenda cultural, obras e reciclagem de Lisboa, incêndios do EFFIS, ocorrências da Proteção Civil, feriados municipais, Arquivo.pt). Só leitura, sem chaves. As ferramentas aceitam perguntas em português.
+*Português:* servidor MCP com os dados públicos de Portugal (IPMA, INE, Banco de Portugal, Parlamento, Portal BASE, dados.gov.pt, SNS, Infarmed, DGEG, MOBI.E, Carris Metropolitana, horários da CP, de Lisboa, Porto, Coimbra, Braga, Aveiro, Cascais, Barreiro, Algarve e Madeira e da FlixBus, autocarros ao vivo no Porto, Coimbra e Lisboa, cortes de luz programados da E-REDES, registos do Turismo de Portugal (alojamento local, praias com bandeira azul, hotéis), agenda cultural, obras, reciclagem e estado do Metro de Lisboa, condicionamentos de trânsito e sensores do Porto, consumo e falhas de eletricidade, incêndios do EFFIS, ocorrências da Proteção Civil, feriados municipais, Arquivo.pt). Só leitura, sem chaves. As ferramentas aceitam perguntas em português.
 
 ## What it covers
 
@@ -30,12 +30,13 @@
 | `transit` | `transit_operators`, `transit_find_stops`, `transit_departures`, `transit_trips_between`, `transit_vehicles` (live) | Official GTFS timetables of [CP](https://www.cp.pt), [Metro de Lisboa](https://www.metrolisboa.pt), [Carris](https://www.carris.pt), [Fertagus](https://www.fertagus.pt), [Metro do Porto](https://www.metrodoporto.pt), [TUB](https://www.tub.pt) (Braga), [SMTUC](https://www.smtuc.pt) and SIT (Coimbra), [Busway](https://www.busway.pt) (Aveiro region), [MobiCascais](https://www.mobicascais.pt), [TCB](https://www.tcbarreiro.pt) (Barreiro), [Vamus](https://vamus.pt) and Próximo (Algarve), [Horários do Funchal](https://www.horariosdofunchal.pt) and the SIGA network (Madeira), and [FlixBus](https://www.flixbus.pt) coaches (ODbL). Live positions: STCP ([Porto urban platform](https://dadosabertos.cm-porto.pt)), SMTUC ([AGIT](https://api.planner.agit.pt)), Carris (GTFS-Realtime) |
 | `incendios` | `wildfires` | [EFFIS](https://forest-fire.emergency.copernicus.eu) (Copernicus, CC BY 4.0) |
 | `ocorrencias` | `active_incidents` (live: what civil protection is responding to near a place, closest first; included on the hosted endpoint; a local install needs its own free personal key in `FOGOS_API_KEY`; police activity is not public) | [ANEPC](https://prociv.gov.pt) via [Fogos.pt](https://fogos.pt) ([request a key](https://source.fogos.pt/api/request-access)) |
-| `eletricidade` | `power_cuts` (planned interruptions by postal code, municipality or parish), `electricity_price` (day-ahead wholesale price for Portugal, per 15 minutes) | [E-REDES open data](https://e-redes.opendatasoft.com) (CC BY 4.0), [OMIE](https://www.omie.es) (free use, unaltered, source cited) |
+| `eletricidade` | `power_cuts` (planned interruptions by postal code, municipality or parish), `electricity_price` (day-ahead wholesale price for Portugal, per 15 minutes), `electricity_grid` (a day's national consumption, peak and wind/solar/hydro generation on the distribution grid), `electricity_local` (monthly consumption of a municipality or postal area, and how often the power went out there) | [E-REDES open data](https://e-redes.opendatasoft.com) (CC BY 4.0), [OMIE](https://www.omie.es) (free use, unaltered, source cited) |
 | `turismo` | `local_accommodation` (the Alojamento Local register: is it registered, how many on a street), `tourism_places` (Blue Flag beaches, surf spots, golf, spas, villages, walking routes, Ways of Saint James, marinas, UNESCO sites, hotels) | [Turismo de Portugal open data](https://dadosabertos.turismodeportugal.pt) (CC BY 4.0) |
-| `lisboa` | `lisbon_events` (the city's cultural agenda), `lisbon_street_works` (licensed occupations of public space, road and pavement works), `lisbon_recycling` (nearest ecoponto, vidrão, oleão...) | [Agenda Cultural de Lisboa](https://www.agendalx.pt) (CC BY), [Lisbon open data](https://geodados-cml.hub.arcgis.com) (CC0 for occupations) |
+| `lisboa` | `lisbon_events` (the city's cultural agenda), `lisbon_street_works` (licensed occupations of public space, road and pavement works), `lisbon_recycling` (nearest ecoponto, vidrão, oleão...), `lisbon_metro_status` (is each Metro line running normally now) | [Agenda Cultural de Lisboa](https://www.agendalx.pt) (CC BY), [Lisbon open data](https://geodados-cml.hub.arcgis.com) (CC0 for occupations), [Metropolitano de Lisboa](https://www.metrolisboa.pt) line status |
 | `arquivo` | `web_archive_search` (full-text search of archived Portuguese websites since 1996), `web_archive_history` (when an address was captured and how often it changed), `web_archive_page` (the text of a page as it was on a date) | [Arquivo.pt](https://arquivo.pt) (FCT), [API](https://github.com/arquivo/pwa-technologies/wiki/Arquivo.pt-API) |
+| `porto` | `porto_road_closures` (streets with traffic or parking restrictions on a day: works, events, loading, plus unplanned ones such as accidents and burst pipes), `porto_sensors` (latest air-quality, noise and weather readings of the city's street sensors) | [Porto open data](https://dadosabertos.cm-porto.pt) (Câmara Municipal do Porto), [Porto Digital urban platform](https://dadosabertos.cm-porto.pt) (CC0) |
 
-There are 59 tools in total. If your client struggles with that many, load only what you need with `PORTUGAL_MCP_FEATURES` (see below).
+There are 64 tools in total. If your client struggles with that many, load only what you need with `PORTUGAL_MCP_FEATURES` (see below).
 
 ### Things to know
 
@@ -50,7 +51,7 @@ There are 59 tools in total. If your client struggles with that many, load only 
 - **Local accommodation:** the register shows what each owner declared; it does not vouch for an online listing. Owner and operator names of tourist establishments are left out on purpose (many are private individuals).
 - **Town-hall data:** `open_data_search(organization="Lisboa")` (or Porto, Cascais, Oeiras, Águeda...) finds that town hall's datasets on dados.gov.pt. Most other towns publish little or nothing.
 - **Electricity prices** (`electricity_price`) are OMIE's wholesale day-ahead prices for Portugal in €/MWh, as published (averages and cheapest periods are computed from them). OMIE's download files lag the market by about a day, so today's and tomorrow's prices may only be on omie.es yet. Not the price on a regular bill.
-- **Not included:** REN Data Hub (its terms forbid reusing its data without consent), Porto's road-closure files (last updated in 2024).
+- **Not included:** REN Data Hub (its terms forbid reusing its data without consent).
 - **Wildfires are satellite-mapped burnt areas** (EFFIS), a day or more after the fact, not live incidents. For today's danger use `fire_risk`; in an emergency call **112**.
 
 ## Install
@@ -130,6 +131,8 @@ Any client that runs stdio servers works: command `uvx`, args `["portugal-mcp"]`
 - "O que há para fazer em Lisboa este sábado, de graça?" / "Há obras na minha rua em Arroios?" / "Onde fica o oleão mais perto?"
 - "FlixBus de Lisboa para Madrid amanhã"
 - "Quanta área ardeu este ano no Algarve?"
+- "O metro está a funcionar normalmente?" / "Há ruas cortadas perto do 4000-457 hoje?" / "Como está a qualidade do ar no Porto agora?"
+- "Quanta eletricidade Portugal gastou ontem, e quanto foi eólica?" / "Quantas vezes faltou a luz em Sintra no ano passado?"
 - "Amanhã é feriado em Braga?" / "Feriados de 2027 no Funchal"
 - "O que dizia o site da Câmara do Porto em 2005?" / "O que o Público escreveu sobre o Orçamento em 2010?"
 

@@ -40,6 +40,7 @@ FEATURES = {
     "turismo": ".turismo",
     "lisboa": ".lisboa",
     "arquivo": ".arquivo",
+    "porto": ".porto",
 }
 
 

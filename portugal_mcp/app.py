@@ -11,7 +11,7 @@ BASE_INSTRUCTIONS = (
     "Lisbon-area buses, train, metro, bus and tram timetables (CP, Lisbon, Porto, Coimbra, Braga, "
     "Aveiro, Cascais, Barreiro, the Algarve, Madeira) and FlixBus coaches, live bus positions (Porto, "
     "Coimbra, Lisbon), tourism registers (local accommodation, Blue Flag beaches, hotels, surf, "
-    "routes), Lisbon city data (events, street works, recycling), the day-ahead electricity price (OMIE), "
+    "routes), Lisbon city data (events, street works, recycling, Metro line status), Porto city data (road closures, air-quality, noise and weather sensors), the day-ahead electricity price (OMIE), national and local electricity consumption and outages (E-REDES), "
     "planned power cuts (E-REDES), wildfire burnt areas (EFFIS) and live civil-protection incidents "
     "(ANEPC), and Arquivo.pt, the archive of Portuguese websites since 1996. Everything is read-only public data. Answer in the user's language and "
     "always say which source and which date or period each figure comes from."
