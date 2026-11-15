@@ -1,6 +1,10 @@
 # Changelog
 
-## 0.10.0 — 2026-11-15
+## 0.10.1 — 2026-11-15
+
+- Same features as 0.10.0, which PyPI refused because the package summary had grown past its 512-character limit. The summary is shorter now; 0.10.0 was never published.
+
+## 0.10.0 — 2026-11-15 (not published)
 
 - New `escolas` feature, `school_stats`: InfoEscolas (DGEEC) figures per school, public and private, in mainland Portugal, for the 1st, 2nd and 3rd cycles, science-humanities secondary and vocational courses: students, retention or dropout rate per grade, the share finishing the cycle on time next to the national figure for students with a similar profile, and (3rd cycle) direct-success paths. The latest yearly file is found on the site and parsed by its headers, not fixed columns.
 - New `anacom` feature: `broadband_coverage` (which fixed technologies reach a place: fibre, DOCSIS 3.1/3.0 cable, copper with ADSL, with the date of ANACOM's data; no operator, and mobile coverage stays out because ANACOM publishes it per operator only as a map image) and `post_offices` (CTT post offices, postal agents and post boxes near a place, with hours per day, services and last collection times).
