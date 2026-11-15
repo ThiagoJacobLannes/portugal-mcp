@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.9.1 — 2026-11-15
+
+- `reservoir_levels`: SNIRH blocks some data-centre and foreign networks (the hosted endpoint among them). The tool now says so clearly and points to a local install or the SNIRH page instead of returning a bare HTTP 403, and the daily live check skips it when the runner is blocked.
+
 ## 0.9.0 — 2026-11-15
 
 - New `eleicoes` feature, `election_results`: official results from the Ministry of Internal Administration (SGMAI) for the 2025, 2024 and 2022 legislative elections, the 2025 and 2021 local elections (câmara, assembleia municipal, assembleia de freguesia), the 2024 European election and the 2021 presidential election. Country, district ("distrito de Braga"), Azores or Madeira, municipality or "municipality, parish"; turnout, blank and null votes, votes, % and seats (and mayors) per list, plus the previous election of the same kind for that place, unmatched on purpose because coalitions change names.

@@ -1163,3 +1163,18 @@ def test_diario_feed_parse_and_filter(monkeypatch):
     r = diario.diario_republica(query="saude")
     assert r["count"] == 1 and r["acts"][0]["act"] == "Decreto-Lei n.º 99/2026"
     assert "error" in diario.diario_republica(series=3)
+
+
+def test_reservoirs_blocked_network_message(monkeypatch):
+    from portugal_mcp import agua
+
+    class R:
+        status_code = 403
+
+    class C:
+        def get(self, *a, **k):
+            return R()
+
+    monkeypatch.setattr(agua, "http", lambda: C())
+    agua._mem.clear()
+    assert "blocks some data-centre" in agua.reservoir_levels()["error"]
