@@ -1265,3 +1265,12 @@ def test_natureza_protected_areas_and_trees(monkeypatch):
                              "concelho": "Sintra", "altura_tot": 13.5, "idade": 800, "latitude": 38.7991, "longitude": -9.3996})
     assert t["place"] == "Qta do Castanheiro, São Martinho, Sintra" and t["age_years"] == 800
     assert "error" in natureza.protected_areas()
+
+
+def test_package_summary_fits_pypi():
+    """PyPI rejects a summary over 512 characters (0.10.0 was refused for that)."""
+    import re
+    from pathlib import Path
+
+    text = (Path(__file__).parent.parent / "pyproject.toml").read_text(encoding="utf-8")
+    assert len(re.search(r'^description = "(.*)"$', text, re.M).group(1)) <= 512
