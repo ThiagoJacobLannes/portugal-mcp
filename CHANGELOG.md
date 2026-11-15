@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.10.0 — 2026-11-15
+
+- New `escolas` feature, `school_stats`: InfoEscolas (DGEEC) figures per school, public and private, in mainland Portugal, for the 1st, 2nd and 3rd cycles, science-humanities secondary and vocational courses: students, retention or dropout rate per grade, the share finishing the cycle on time next to the national figure for students with a similar profile, and (3rd cycle) direct-success paths. The latest yearly file is found on the site and parsed by its headers, not fixed columns.
+- New `anacom` feature: `broadband_coverage` (which fixed technologies reach a place: fibre, DOCSIS 3.1/3.0 cable, copper with ADSL, with the date of ANACOM's data; no operator, and mobile coverage stays out because ANACOM publishes it per operator only as a map image) and `post_offices` (CTT post offices, postal agents and post boxes near a place, with hours per day, services and last collection times).
+- New `natureza` feature (ICNF): `protected_areas` (whether a point is in the National Network of Protected Areas, a Natura 2000 SIC/ZEC or ZPE, a Ramsar wetland or a biosphere reserve, with the classifying act) and `notable_trees` (trees of public interest by municipality or around a place, with species, size and age). 72 tools.
+
 ## 0.9.1 — 2026-11-15
 
 - `reservoir_levels`: SNIRH blocks some data-centre and foreign networks (the hosted endpoint among them). The tool now says so clearly and points to a local install or the SNIRH page instead of returning a bare HTTP 403, and the daily live check skips it when the runner is blocked.

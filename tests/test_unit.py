@@ -1178,3 +1178,90 @@ def test_reservoirs_blocked_network_message(monkeypatch):
     monkeypatch.setattr(agua, "http", lambda: C())
     agua._mem.clear()
     assert "blocks some data-centre" in agua.reservoir_levels()["error"]
+
+
+# --- schools (InfoEscolas), ANACOM, ICNF ---------------------------------------------
+
+
+def _infoescolas_book():
+    import openpyxl
+
+    wb = openpyxl.Workbook()
+    wb.active.title = "DescriçãoGeral"
+    pop = wb.create_sheet("Populacao")
+    for _ in range(5):
+        pop.append([None])
+    pop.append(["Código Escola DGEEC", "Nome da Escola", "Município", "Alunos em 2022/2023", None, "Alunos em 2023/2024", None, "Observações"])
+    pop.append([None, None, None, "7.º Ano", "8.º Ano", "7.º Ano", "8.º Ano"])
+    pop.append(["TOTALPT", "Total Nacional", "-", 100, 90, 110, 95, "-"])
+    pop.append([1106623, "Escola Secundária Pedro Nunes, Lisboa", "Lisboa", 10, 9, 12, 11, None])
+    ret = wb.create_sheet("Retencao")
+    for _ in range(5):
+        ret.append([None])
+    ret.append(["Código Escola DGEEC", "Nome da Escola", "Município", "2022/2023", None, "2023/2024", None, "Observações"])
+    ret.append([None, None, None, "7.º Ano", "8.º Ano", "7.º Ano", "8.º Ano"])
+    ret.append([1106623, "Escola Secundária Pedro Nunes, Lisboa", "Lisboa", 0.05, 0.04, 0.03, 0.02, None])
+    cte = wb.create_sheet("ConclusãoTempoEsperado")
+    for _ in range(5):
+        cte.append([None])
+    cte.append(["Código Escola DGEEC", "Nome da Escola", "Município", "2023/2024", None, None, "Observações"])
+    cte.append([None, None, None, " Número de alunos da escola na amostra", "% alunos da escola que concluíram o 3.º ciclo em 3 anos",
+                "% alunos do país com um perfil semelhante aos da escola que concluíram o 3.º ciclo em 3 anos"])
+    cte.append([1106623, "Escola Secundária Pedro Nunes, Lisboa", "Lisboa", 120, 0.948, 0.961, None])
+    buf = io.BytesIO()
+    wb.save(buf)
+    return buf.getvalue()
+
+
+def test_infoescolas_parse_and_tool(monkeypatch):
+    from portugal_mcp import escolas
+
+    assert escolas.year_spans([None, "Alunos em 2022/2023", None, "Alunos em 2023/2024", None, "Observações"]) == [("2022/23", 1, 3), ("2023/24", 3, 5)]
+    doc = escolas.parse_workbook(_infoescolas_book())
+    s = doc["schools"]["1106623"]
+    assert doc["year"] == "2023/24" and s["students"] == 23 and doc["schools"]["TOTALPT"]["students"] == 205
+    assert s["retention_or_dropout_pct"] == {"school_year": "2023/24", "7.º Ano": 3.0, "8.º Ano": 2.0}
+    assert s["finished_on_time_pct"] == {"school_year": "2023/24", "school": 94.8, "similar_students_nationally": 96.1}
+    monkeypatch.setattr(escolas, "_load", lambda lv: doc)
+    monkeypatch.setattr(geo, "_municipalities", lambda: [{"name": "Lisboa", "dico": "1106", "district": "Lisboa", "parishes": []}])
+    assert escolas.school_stats(school="pedro nunes", level="3ciclo")["count"] == 1
+    assert escolas.school_stats(municipality="Lisboa", level="3")["schools"][0]["code"] == "1106623"
+    assert escolas.school_stats(level="3ciclo")["count"] == 0
+    assert escolas.pick_level("profissional") == "profissional" and escolas.pick_level("1.º ciclo") == "1ciclo"
+    assert "error" in escolas.school_stats(level="universidade")
+
+
+def test_anacom_shapes():
+    from portugal_mcp import anacom
+
+    service = {"layers": [{"id": 1, "name": "Rede Fixa", "parentLayerId": -1}, {"id": 8, "name": "Fibra Ótica", "parentLayerId": 1},
+                          {"id": 6, "name": "Cobre (com ADSL)", "parentLayerId": 1}, {"id": 162, "name": "Rede Móvel", "parentLayerId": -1},
+                          {"id": 167, "name": "4G", "parentLayerId": 162}]}
+    assert anacom.fixed_layers(service) == [(8, "Fibra Ótica"), (6, "Cobre (com ADSL)")]
+    st = anacom.shape_station({"designacao": "FANQUEIROS", "morada": "RUA DOS FANQUEIROS, Nº 160", "cod_postal": "1100-997", "dias_uteis_ab": "09:00:00",
+                               "dias_uteis_alm_ini": "12:30:00", "dias_uteis_alm_fim": "14:00:00", "dias_uteis_fx": "18:00:00", "encomendas": "Sim", "cobrancas": "Não"})
+    assert st["hours"] == {"weekdays": "09:00-12:30, 14:00-18:00", "saturday": "closed", "sunday_holidays": "closed"} and st["services"] == ["encomendas"]
+    ag = anacom.shape_agent({"designacao": "LOJA", "abertura": "10:00:00", "fecho": "18:00:00", "abertura_15": "10:00:00", "fecho_15": "13:00:00"})
+    assert ag["hours"]["monday"] == "10:00-18:00" and ag["hours"]["saturday"] == "10:00-13:00" and ag["hours"]["sunday"] == "closed"
+    box = anacom.shape_box({"tipo_marco_caixa": "CE - Caixa Embutida", "arteria": "R JOÃO DE OLIVEIRA RAMOS", "n_policia_porta": "1", "ultima_recolha_cn": "09:00:00"})
+    assert box["address"] == "R JOÃO DE OLIVEIRA RAMOS 1" and box["last_collection"]["normal_mail"] == "09:00"
+
+
+def test_natureza_protected_areas_and_trees(monkeypatch):
+    from portugal_mcp import natureza
+
+    def features(layer, cql, count=10):
+        if layer == "snimar:rnap_snimar":
+            return [{"nome_ap": "Arrabida", "classifica": "Parque Natural", "publica1": "DL n. 622/76", "area_ha": 17641.158, "geom": "x", "objectid": 3}]
+        if layer == "BDG:zpe":
+            raise OSError("layer down")
+        return []
+
+    monkeypatch.setattr(natureza, "_features", features)
+    r = natureza.protected_areas(lat=38.48, lon=-8.98)
+    assert r["inside_any"] and r["designations"]["protected_area"]["areas"] == [{"nome_ap": "Arrabida", "classifica": "Parque Natural", "publica1": "DL n. 622/76", "area_ha": 17641.2}]
+    assert r["not_checked"] == ["Natura 2000, Special Protection Area (ZPE, birds)"]
+    t = natureza.shape_tree({"nome_cient": "Castanea sativa Miller", "nomevulgar": "castanheiro", "lugar": "Qta do Castanheiro", "freguesia": "São Martinho",
+                             "concelho": "Sintra", "altura_tot": 13.5, "idade": 800, "latitude": 38.7991, "longitude": -9.3996})
+    assert t["place"] == "Qta do Castanheiro, São Martinho, Sintra" and t["age_years"] == 800
+    assert "error" in natureza.protected_areas()

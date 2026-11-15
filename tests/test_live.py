@@ -232,3 +232,24 @@ def test_diario_republica():
     from portugal_mcp import diario
 
     assert ok(diario.diario_republica())["count"] > 0
+
+
+def test_school_stats():
+    from portugal_mcp import escolas
+
+    r = ok(escolas.school_stats(school="Pedro Nunes", level="secundario"))
+    assert r["count"] >= 1 and r["schools"][0]["students"] > 0
+
+
+def test_anacom():
+    from portugal_mcp import anacom
+
+    assert ok(anacom.broadband_coverage(lat=38.7077, lon=-9.1365))["fibre"] is True
+    assert ok(anacom.post_offices(lat=41.155, lon=-8.6, radius_km=1))["boxes"]["count"] > 0
+
+
+def test_natureza():
+    from portugal_mcp import natureza
+
+    assert ok(natureza.protected_areas(lat=38.48, lon=-8.98))["inside_any"] is True
+    assert ok(natureza.notable_trees(municipality="Sintra"))["count"] > 0
