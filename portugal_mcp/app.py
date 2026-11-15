@@ -13,7 +13,7 @@ BASE_INSTRUCTIONS = (
     "Coimbra, Lisbon), tourism registers (local accommodation, Blue Flag beaches, hotels, surf, "
     "routes), Lisbon city data (events, street works, recycling, Metro line status), Porto city data (road closures, air-quality, noise and weather sensors), the day-ahead electricity price (OMIE), national and local electricity consumption and outages (E-REDES), "
     "planned power cuts (E-REDES), wildfire burnt areas (EFFIS) and live civil-protection incidents "
-    "(ANEPC), and Arquivo.pt, the archive of Portuguese websites since 1996. Everything is read-only public data. Answer in the user's language and "
+    "(ANEPC), Arquivo.pt, the archive of Portuguese websites since 1996, official election results (SGMAI), reservoir levels (APA) and the latest Diário da República issue. Everything is read-only public data. Answer in the user's language and "
     "always say which source and which date or period each figure comes from."
 )
 

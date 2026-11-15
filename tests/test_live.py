@@ -209,3 +209,23 @@ def test_electricity_grid_and_local():
 
     assert ok(eletricidade.electricity_grid())["consumption_gwh"] > 50
     assert ok(eletricidade.electricity_local(municipality="Sintra", months=2))["power_outages"]
+
+
+def test_elections():
+    from portugal_mcp import eleicoes
+
+    assert ok(eleicoes.election_results())["results"]
+    assert ok(eleicoes.election_results("autarquicas2025", "Águeda"))["results"][0]["mayors_or_presidents"] == 1
+    assert ok(eleicoes.election_results("legislativas2025", "Lisboa, Arroios"))["results"]
+
+
+def test_reservoirs():
+    from portugal_mcp import agua
+
+    assert ok(agua.reservoir_levels())["mainland_pct_full"] > 0
+
+
+def test_diario_republica():
+    from portugal_mcp import diario
+
+    assert ok(diario.diario_republica())["count"] > 0

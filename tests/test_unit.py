@@ -1066,3 +1066,100 @@ def test_electricity_local(monkeypatch):
     calls.clear()
     assert "warning" in e.electricity_local(municipality="Funchal") and calls == []
     assert "error" in e.electricity_local()
+
+
+# --- elections, reservoirs, Diário da República -----------------------------------------
+
+
+def test_election_picking_and_places():
+    from portugal_mcp import eleicoes as el
+
+    assert el.pick_election(None) == "legislativas2025"
+    assert el.pick_election("autarquicas") == "autarquicas2025"
+    assert el.pick_election("Autárquicas 2021") == "autarquicas2021"
+    assert el.pick_election("europeias") == "europeias2024"
+    with pytest.raises(ValueError):
+        el.pick_election("legislativas 2019")
+    assert el.split_district("distrito de Braga") == ("Braga", True)
+    assert el.split_district("Braga") == ("Braga", False)
+
+
+def test_election_place_keys(monkeypatch):
+    from portugal_mcp import eleicoes as el
+
+    monkeypatch.setattr(geo, "_municipalities", lambda: [
+        {"name": "Braga", "dico": "0303", "district": "Braga", "parishes": []},
+        {"name": "Águeda", "dico": "0101", "district": "Aveiro", "parishes": []},
+    ])
+    assert el._place_keys(None)[0] == "LOCAL-500000"
+    assert el._place_keys("Braga")[:2] == ("LOCAL-030300", "Braga")
+    assert el._place_keys("distrito de Braga")[0] == "LOCAL-030000"
+    assert el._place_keys("Açores")[0] == "LOCAL-400000"
+    assert el._place_keys("Águeda, Fermentelos") == ("LOCAL-010100", "Águeda", "Fermentelos")
+
+
+def test_election_results_shape():
+    from portugal_mcp import eleicoes as el
+
+    raw = {
+        "currentResults": {"subscribedVoters": 100, "totalVoters": 60, "percentageVoters": 60.0, "blankVotesPercentage": 1.5, "nullVotesPercentage": 1.0, "totalMandates": 7,
+                           "resultsParty": [{"acronym": "B", "votes": 10, "percentage": 20.0, "mandates": 2, "presidents": 0},
+                                            {"acronym": "A", "votes": 30, "percentage": 60.0, "mandates": 5, "presidents": 1},
+                                            {"acronym": "C", "votes": 5, "percentage": 10.0, "mandates": 0}]},
+        "previousResults": {"percentageVoters": 55.0, "resultsParty": [{"acronym": "A.X", "votes": 9, "percentage": 45.0}]},
+    }
+    out = el.shape_results(raw, 2)
+    assert [r["party"] for r in out["results"]] == ["A", "B"] and out["other_lists"] == 1
+    assert out["results"][0]["mayors_or_presidents"] == 1 and out["seats_total"] == 7
+    assert out["previous_election"] == {"turnout_pct": 55.0, "results": [{"party": "A.X", "pct": 45.0}]}
+
+
+SNIRH_SAMPLE = """<table>
+<tr><td></td><td></td><td>ARADE</td><td>TEJO</td></tr>
+<tr><td>Capacidade Total 10<sup>6</sup>m<sup>3</sup></td><td>233.1</td><td>2 546.4</td></tr>
+<tr><td>M&eacute;dia (%)</td><td>OUT</td><td>38.5</td><td>62.4</td></tr>
+<tr><td>NOV</td><td>n/d</td><td>n/d</td></tr>
+<tr><td>2025/26(%)</td><td>OUT</td><td>70.3</td><td>69.0</td></tr>
+<tr><td>NOV</td><td>74.8</td><td>80.4</td></tr>
+<tr><td>2026/27(%)</td><td>OUT</td><td>72.2</td><td>64.2</td></tr>
+<tr><td>NOV</td><td>n/d</td><td>n/d</td></tr>
+</table>"""
+
+
+def test_reservoir_table_parse_and_summary():
+    from portugal_mcp import agua
+
+    parsed = agua.parse_table(SNIRH_SAMPLE)
+    assert parsed["basins"] == ["ARADE", "TEJO"] and parsed["capacity_hm3"] == [233.1, 2546.4]
+    assert agua.latest(parsed) == ("2026/27", "OUT", [72.2, 64.2])
+    s = agua.summarise(parsed, None)
+    assert s["month"] == "2026-10" and s["hydrological_year"] == "2026/27"
+    assert s["basins"][1] == {"basin": "Tejo", "pct_full": 64.2, "historical_average_pct": 62.4, "pct_a_year_before": 69.0, "capacity_hm3": 2546.4}
+    assert s["mainland_pct_full"] == round(100 * (233.1 * 0.722 + 2546.4 * 0.642) / (233.1 + 2546.4), 1)
+    assert [b["basin"] for b in agua.summarise(parsed, "tejo")["basins"]] == ["Tejo"]
+    with pytest.raises(ValueError):
+        agua.summarise(parsed, "Nilo")
+
+
+DR_SAMPLE = """<?xml version="1.0" encoding="UTF-8" ?><rss version="2.0"><channel>
+<title>Diário do Dia - Série I</title><description>Diario do Dia - Série I - 2026-11-13</description>
+<item><title>Portaria n.º 501-A/2026/1  -  Diário da República n.º 221/2026, Suplemento, Série I de 2026-11-13</title>
+<description type="html"><![CDATA[Finanças e Ambiente e Energia Procede à revisão das taxas do ISP.]]></description>
+<link><![CDATA[https://diariodarepublica.pt/dr/detalhe/portaria/501-a-2026-1195517590]]></link></item>
+<item><title>Decreto-Lei n.º 99/2026  -  Diário da República n.º 221/2026, Série I de 2026-11-13</title>
+<description type="html"><![CDATA[Saúde Altera o regime das taxas moderadoras.]]></description>
+<link><![CDATA[https://diariodarepublica.pt/dr/detalhe/decreto-lei/99-2026-1]]></link></item>
+</channel></rss>"""
+
+
+def test_diario_feed_parse_and_filter(monkeypatch):
+    from portugal_mcp import diario
+
+    doc = diario.parse_feed(DR_SAMPLE)
+    assert doc["day"] == "2026-11-13" and len(doc["acts"]) == 2
+    assert doc["acts"][0]["act"] == "Portaria n.º 501-A/2026/1" and doc["acts"][0]["issue"].startswith("Diário da República n.º 221/2026")
+    assert doc["acts"][0]["link"].endswith("1195517590")
+    monkeypatch.setattr(diario, "_feed", lambda s: doc)
+    r = diario.diario_republica(query="saude")
+    assert r["count"] == 1 and r["acts"][0]["act"] == "Decreto-Lei n.º 99/2026"
+    assert "error" in diario.diario_republica(series=3)
