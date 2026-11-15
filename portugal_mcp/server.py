@@ -44,6 +44,9 @@ FEATURES = {
     "eleicoes": ".eleicoes",
     "agua": ".agua",
     "diario": ".diario",
+    "escolas": ".escolas",
+    "anacom": ".anacom",
+    "natureza": ".natureza",
 }
 
 

@@ -10,7 +10,7 @@
 
 **Read-only, no API keys, no accounts.** Every answer comes from an official or public open-data source and says which one and for which date. Not affiliated with any of the sources.
 
-*Português:* servidor MCP com os dados públicos de Portugal (IPMA, INE, Banco de Portugal, Parlamento, Portal BASE, dados.gov.pt, SNS, Infarmed, DGEG, MOBI.E, Carris Metropolitana, horários da CP, de Lisboa, Porto, Coimbra, Braga, Aveiro, Cascais, Barreiro, Algarve e Madeira e da FlixBus, autocarros ao vivo no Porto, Coimbra e Lisboa, cortes de luz programados da E-REDES, registos do Turismo de Portugal (alojamento local, praias com bandeira azul, hotéis), agenda cultural, obras, reciclagem e estado do Metro de Lisboa, condicionamentos de trânsito e sensores do Porto, consumo e falhas de eletricidade, incêndios do EFFIS, ocorrências da Proteção Civil, feriados municipais, Arquivo.pt, resultados eleitorais, albufeiras, Diário da República). Só leitura, sem chaves. As ferramentas aceitam perguntas em português.
+*Português:* servidor MCP com os dados públicos de Portugal (IPMA, INE, Banco de Portugal, Parlamento, Portal BASE, dados.gov.pt, SNS, Infarmed, DGEG, MOBI.E, Carris Metropolitana, horários da CP, de Lisboa, Porto, Coimbra, Braga, Aveiro, Cascais, Barreiro, Algarve e Madeira e da FlixBus, autocarros ao vivo no Porto, Coimbra e Lisboa, cortes de luz programados da E-REDES, registos do Turismo de Portugal (alojamento local, praias com bandeira azul, hotéis), agenda cultural, obras, reciclagem e estado do Metro de Lisboa, condicionamentos de trânsito e sensores do Porto, consumo e falhas de eletricidade, incêndios do EFFIS, ocorrências da Proteção Civil, feriados municipais, Arquivo.pt, resultados eleitorais, albufeiras, Diário da República, estatísticas das escolas, cobertura de fibra e estações dos CTT, áreas protegidas e árvores classificadas). Só leitura, sem chaves. As ferramentas aceitam perguntas em português.
 
 ## What it covers
 
@@ -38,8 +38,11 @@
 | `eleicoes` | `election_results` (official results of the 2025, 2024 and 2022 legislative, 2025 and 2021 local, 2024 European and 2021 presidential elections, for the country, a district, a municipality or a parish, with the previous election of the same kind) | [SGMAI, Ministério da Administração Interna](https://www.eleicoes.mai.gov.pt) |
 | `agua` | `reservoir_levels` (how full mainland reservoirs are per river basin, against the month's historical average and a year before) | [APA, SNIRH](https://snirh.apambiente.pt) |
 | `diario` | `diario_republica` (what the latest Diário da República issue published, Series I and II, with links) | [Diário da República](https://diariodarepublica.pt) (INCM) |
+| `escolas` | `school_stats` (per school, public and private: students, retention or dropout rate, the share finishing on time next to comparable students nationally, and direct-success paths, from the 1st cycle to secondary and vocational) | [InfoEscolas, DGEEC](https://infoescolas.medu.pt) |
+| `anacom` | `broadband_coverage` (fibre, cable and copper at a place, dated), `post_offices` (CTT post offices, postal agents and post boxes nearby, with hours, services and last collection) | [ANACOM](https://geo.anacom.pt) (Fonte: ANACOM) |
+| `natureza` | `protected_areas` (is a place in a natural park, reserve, Natura 2000 site, Ramsar wetland or biosphere reserve), `notable_trees` (classified trees of public interest) | [ICNF](https://si.icnf.pt) |
 
-There are 67 tools in total. If your client struggles with that many, load only what you need with `PORTUGAL_MCP_FEATURES` (see below).
+There are 72 tools in total. If your client struggles with that many, load only what you need with `PORTUGAL_MCP_FEATURES` (see below).
 
 ### Things to know
 
@@ -138,6 +141,8 @@ Any client that runs stdio servers works: command `uvx`, args `["portugal-mcp"]`
 - "Quanta eletricidade Portugal gastou ontem, e quanto foi eólica?" / "Quantas vezes faltou a luz em Sintra no ano passado?"
 - "Quem ganhou a câmara de Sintra nas autárquicas?" / "Como votou Arroios nas legislativas de 2025?"
 - "Como estão as barragens do Algarve?" / "O que saiu hoje no Diário da República sobre IRS?"
+- "Como está a Escola Secundária Pedro Nunes em retenções?" / "Há fibra no 4000-457?" / "Qual a estação dos CTT mais perto e até que horas abre?"
+- "Este terreno em 38.48, -8.98 fica num parque natural?" / "Que árvores classificadas há em Sintra?"
 - "Amanhã é feriado em Braga?" / "Feriados de 2027 no Funchal"
 - "O que dizia o site da Câmara do Porto em 2005?" / "O que o Público escreveu sobre o Orçamento em 2010?"
 
