@@ -41,6 +41,9 @@ FEATURES = {
     "lisboa": ".lisboa",
     "arquivo": ".arquivo",
     "porto": ".porto",
+    "eleicoes": ".eleicoes",
+    "agua": ".agua",
+    "diario": ".diario",
 }
 
 

@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.9.0 — 2026-11-15
+
+- New `eleicoes` feature, `election_results`: official results from the Ministry of Internal Administration (SGMAI) for the 2025, 2024 and 2022 legislative elections, the 2025 and 2021 local elections (câmara, assembleia municipal, assembleia de freguesia), the 2024 European election and the 2021 presidential election. Country, district ("distrito de Braga"), Azores or Madeira, municipality or "municipality, parish"; turnout, blank and null votes, votes, % and seats (and mayors) per list, plus the previous election of the same kind for that place, unmatched on purpose because coalitions change names.
+- New `agua` feature, `reservoir_levels`: how full mainland reservoirs are per river basin in the latest month APA has published (SNIRH), with the historical average for that month, the same month a year before, the capacity and the capacity-weighted mainland total.
+- New `diario` feature, `diario_republica`: the acts in the latest Diário da República issue, Series I or II, with a summary and link, filterable by words (official INCM RSS; it cannot search older legislation). 67 tools.
+
 ## 0.8.0 — 2026-11-13
 
 - New `porto` feature (Câmara Municipal do Porto open data): `porto_road_closures` lists the streets with traffic or parking restrictions active on a day, planned (works, events, loading, scaffolding) and unplanned (accidents, burst pipes, fallen trees), by street name, Porto postal code or point; the city files are refreshed daily (they had looked frozen in 2024, which is why this was left out before). `porto_sensors` gives the latest readings of the city's air-quality, noise and weather sensors (Porto Digital urban platform, CC0), skipping sensors that stopped reporting.
