@@ -17,6 +17,11 @@ log = logging.getLogger("portugal_mcp.agua")
 
 TABLE = "https://snirh.apambiente.pt/snirh/_dadossintese/albufeiras/tabelas/tabelageral.php"
 SOURCE = "APA - Agência Portuguesa do Ambiente, SNIRH monthly reservoir storage bulletin (snirh.apambiente.pt)"
+BLOCKED = (
+    "SNIRH (APA) refused this request: it blocks some data-centre and foreign networks, which includes "
+    "the shared hosted endpoint. A local install (uvx portugal-mcp) on a home connection in Portugal "
+    "works; the bulletin is also at https://snirh.apambiente.pt (Dados Sintetizados > Armazenamento em Albufeiras)."
+)
 MONTHS = ["OUT", "NOV", "DEZ", "JAN", "FEV", "MAR", "ABR", "MAI", "JUN", "JUL", "AGO", "SET"]
 MONTH_NO = {m: (i + 9) % 12 + 1 for i, m in enumerate(MONTHS)}  # OUT -> 10 ... SET -> 9
 
@@ -83,6 +88,8 @@ def _fetch(year: int, month: int) -> dict[str, Any]:
     if hit and time.time() - hit[0] < 6 * 3600:
         return hit[1]
     r = http().get(TABLE, params={"percOUvolum": 0, "anohi": year, "mes": month, "bacia": "", "albuf": "", "albuftblgeralopcao": "", "zonas": ""}, headers={"Accept": "text/html"}, timeout=30)
+    if r.status_code == 403:
+        raise PermissionError(BLOCKED)
     r.raise_for_status()
     parsed = parse_table(r.content.decode("iso-8859-1"))
     _mem[key] = (time.time(), parsed)

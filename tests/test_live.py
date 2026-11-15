@@ -222,7 +222,10 @@ def test_elections():
 def test_reservoirs():
     from portugal_mcp import agua
 
-    assert ok(agua.reservoir_levels())["mainland_pct_full"] > 0
+    r = agua.reservoir_levels()
+    if "blocks some data-centre" in str(r.get("error", "")):
+        pytest.skip("SNIRH blocks this runner's network")
+    assert ok(r)["mainland_pct_full"] > 0
 
 
 def test_diario_republica():
