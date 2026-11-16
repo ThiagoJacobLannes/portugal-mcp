@@ -38,8 +38,8 @@ def _fields(buf: bytes):
             v, i = buf[i : i + ln], i + ln
         elif wt == 5:
             v, i = struct.unpack_from("<f", buf, i)[0], i + 4
-        else:  # groups (3/4) are not used by GTFS-RT
-            raise ValueError(f"unsupported protobuf wire type {wt}")
+        else:  # groups (3/4) are not used by GTFS-RT: the bytes are not a GTFS-Realtime feed
+            raise ValueError(f"not a GTFS-Realtime feed (unsupported protobuf wire type {wt})")
         yield num, wt, v
 
 

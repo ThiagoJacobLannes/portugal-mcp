@@ -102,6 +102,23 @@ def get_json(url: str, params: dict[str, Any] | None = None, *, retries: int = 2
     raise RuntimeError(f"source unavailable: {last}") from last
 
 
+def get_retry(url: str, *, retries: int = 1, **kwargs: Any) -> httpx.Response:
+    """GET any document, retrying a dropped connection, a timeout or a 5xx once more after a short pause.
+
+    Slow public servers (INE, Arquivo.pt) sometimes time out or close the connection on the first try.
+    """
+    for attempt in range(retries + 1):
+        try:
+            r = http().get(url, **kwargs)
+            if r.status_code < 500 or attempt == retries:
+                return r
+        except httpx.TransportError:
+            if attempt == retries:
+                raise
+        time.sleep(2.0 * (attempt + 1))
+    raise AssertionError("unreachable")
+
+
 class FileCache:
     """A downloaded-and-parsed document kept as gzip JSON on disk.
 

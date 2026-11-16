@@ -12,7 +12,7 @@ from datetime import date
 from typing import Any
 
 from .app import mcp, note
-from .common import clamp, fail, get_json, http
+from .common import clamp, fail, get_json, get_retry
 
 log = logging.getLogger("portugal_mcp.arquivo")
 
@@ -58,7 +58,7 @@ def _strip(snippet: str | None) -> str | None:
 
 
 def _cdx(params: dict[str, Any]) -> list[dict[str, Any]]:
-    r = http().get(f"{BASE}/wayback/cdx", params={"output": "json", **params}, timeout=60)
+    r = get_retry(f"{BASE}/wayback/cdx", params={"output": "json", **params}, timeout=60)
     r.raise_for_status()
     return [json.loads(line) for line in r.text.splitlines() if line.strip()]
 
@@ -187,7 +187,7 @@ def web_archive_page(url: str, when: str | None = None, max_chars: int = 3000) -
             out["note"] = f"This capture is {c.get('mime')}, not a web page: open the archive link."
             out["source"] = SOURCE
             return out
-        r = http().get(f"{BASE}/noFrame/replay/{c['timestamp']}id_/{c['url']}", headers={"Accept": "text/html"}, timeout=60)
+        r = get_retry(f"{BASE}/noFrame/replay/{c['timestamp']}id_/{c['url']}", headers={"Accept": "text/html"}, timeout=60)
         r.raise_for_status()
         title, text = page_text(r.text[:3_000_000])
         cap = clamp(max_chars, 200, 8000, 3000)

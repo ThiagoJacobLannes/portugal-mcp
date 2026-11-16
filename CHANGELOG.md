@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.10.2 — 2026-11-16
+
+- `transit_vehicles`: when an operator's own live feed is down (AGIT's SMTUC feed has been answering with a JSON status instead of GTFS-Realtime), the tool now says so plainly instead of the cryptic "unsupported protobuf wire type 3". A feed address that answers 4xx is reported as a real break.
+- INE and Arquivo.pt requests retry once after a timeout or a dropped connection, which is what failed the daily live check on 2026-11-15.
+- The daily live check runs each live-vehicle operator on its own and skips one whose publisher reports its feed as down, so one city's outage no longer hides the others or fails the run.
+
 ## 0.10.1 — 2026-11-15
 
 - Same features as 0.10.0, which PyPI refused because the package summary had grown past its 512-character limit. The summary is shorter now; 0.10.0 was never published.
