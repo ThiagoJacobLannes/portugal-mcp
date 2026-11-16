@@ -430,6 +430,58 @@ def test_gtfsrt_vehicle_positions():
     assert abs(v["lat"] - 38.7106) < 1e-4 and v["speed_kmh"] == 18 and v["bearing"] == 90
 
 
+def test_gtfsrt_rejects_a_json_body():
+    from portugal_mcp import gtfsrt
+
+    with pytest.raises(ValueError, match="not a GTFS-Realtime feed"):
+        gtfsrt.vehicles(b'{"status": "unavailable"}')
+
+
+@pytest.mark.parametrize(
+    ("status", "body", "expect"),
+    [
+        (503, b'{"reason": "source-request-failed"}', "unavailable at the source right now (HTTP 503, source-request-failed)"),
+        (200, b'{"status": "unavailable"}', "unavailable at the source right now (HTTP 200, unavailable)"),
+        (404, b"<html>Not Found</html>", "address answered HTTP 404"),
+    ],
+)
+def test_transit_vehicles_feed_down(monkeypatch, status, body, expect):
+    import json as _json
+
+    from portugal_mcp import transit_live
+
+    class Resp:
+        status_code = status
+        content = body
+
+        def json(self):
+            return _json.loads(body)
+
+    monkeypatch.setattr(transit_live, "http", lambda: type("C", (), {"get": lambda self, *a, **k: Resp()})())
+    transit_live._cache.clear()
+    r = transit_live.transit_vehicles("coimbra")
+    assert expect in r["error"] and r["error"].startswith("SMTUC (Coimbra buses)")
+    assert (transit_live.UNAVAILABLE in r["error"]) is (status != 404)
+
+
+def test_get_retry_retries_a_dropped_connection(monkeypatch):
+    import httpx
+
+    from portugal_mcp import common
+
+    calls = []
+
+    def get(url, **kw):
+        calls.append(url)
+        if len(calls) == 1:
+            raise httpx.RemoteProtocolError("Server disconnected without sending a response.")
+        return httpx.Response(200, text="ok")
+
+    monkeypatch.setattr(common, "http", lambda: type("C", (), {"get": staticmethod(get)})())
+    monkeypatch.setattr(common.time, "sleep", lambda s: None)
+    assert common.get_retry("https://example.invalid/x").text == "ok" and len(calls) == 2
+
+
 def test_transit_vehicles_stcp(monkeypatch):
     import time as _t
     from datetime import datetime, timezone

@@ -10,7 +10,7 @@ from typing import Any
 import defusedxml.ElementTree as ET
 
 from .app import mcp, note
-from .common import clamp, fail, get_json, http, keywords, norm, pt_number
+from .common import clamp, fail, get_json, get_retry, keywords, norm, pt_number
 
 log = logging.getLogger("portugal_mcp.ine")
 
@@ -31,7 +31,7 @@ def _catalog(lang: str) -> list[dict[str, Any]]:
     hit = _mem.get(key)
     if hit and time.time() - hit[0] < 86400:
         return hit[1]
-    r = http().get(f"{BASE}/xml_indic.jsp", params={"opc": "3", "lang": lang}, timeout=60)
+    r = get_retry(f"{BASE}/xml_indic.jsp", params={"opc": "3", "lang": lang}, timeout=60)
     r.raise_for_status()
     root = ET.fromstring(r.content)
     rows = []

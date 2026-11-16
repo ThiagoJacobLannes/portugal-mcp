@@ -119,11 +119,14 @@ transit_center = {
 }
 
 
-def test_live_vehicles():
+@pytest.mark.parametrize("op", ["stcp", "smtuc", "carris"])
+def test_live_vehicles(op):
     from portugal_mcp import transit_live
 
-    for op in ("stcp", "smtuc", "carris"):
-        assert "vehicles_reporting" in ok(transit_live.transit_vehicles(op, limit=1)), op
+    r = transit_live.transit_vehicles(op, limit=1)
+    if transit_live.UNAVAILABLE in str(r.get("error", "")):
+        pytest.skip(f"{op}: the publisher reports its own live feed as down ({r['error']})")
+    assert "vehicles_reporting" in ok(r), op
 
 
 def test_power_cuts():

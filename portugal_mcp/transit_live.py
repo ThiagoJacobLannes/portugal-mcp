@@ -86,9 +86,34 @@ def _stcp() -> list[dict[str, Any]]:
     return out
 
 
+UNAVAILABLE = "live vehicle feed is unavailable at the source right now"
+
+
 def _gtfsrt(op: str) -> list[dict[str, Any]]:
-    _, rows = gtfsrt.vehicles(http().get(LIVE[op]["url"], timeout=30, headers={"Accept": "*/*"}).content)
+    r = http().get(LIVE[op]["url"], timeout=30, headers={"Accept": "*/*"})
+    body = r.content
+    # A protobuf feed never starts with "{", "[" or "<": that is the publisher's JSON or HTML error page
+    # (AGIT answers with JSON while its own SMTUC source is down), not something to decode.
+    if 400 <= r.status_code < 500:  # the address moved or we are refused: a real break, say so plainly
+        raise RuntimeError(f"{LIVE[op]['name']}: the live feed address answered HTTP {r.status_code}{_reason(r)}.")
+    if r.status_code != 200 or body.lstrip()[:1] in (b"{", b"[", b"<"):
+        raise RuntimeError(f"{LIVE[op]['name']}: the {UNAVAILABLE} (HTTP {r.status_code}{_reason(r)}). "
+                           "Try again later; the other operators are not affected.")
+    _, rows = gtfsrt.vehicles(body)
     return rows
+
+
+def _reason(r: Any) -> str:
+    """The publisher's own short reason, when its error page is JSON."""
+    try:
+        d = r.json()
+    except Exception:  # noqa: BLE001
+        return ""
+    for k in ("reason", "message", "error", "detail", "status"):
+        v = d.get(k) if isinstance(d, dict) else None
+        if isinstance(v, str) and v.strip():
+            return f", {v.strip()[:120]}"
+    return ""
 
 
 def _fetch(op: str) -> list[dict[str, Any]]:
