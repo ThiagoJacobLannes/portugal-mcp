@@ -72,6 +72,8 @@ claude mcp add --transport http portugal https://mcp.thiagolannes.com/portugal
 
 It is rate-limited to 60 requests a minute per IP (Claude's own connectors on claude.ai, desktop and mobile all arrive from Anthropic's servers, so those addresses get 600), and it stays awake and refreshes the large files (contracts, Parliament, EV chargers, timetables) in the background before they expire, so answers come in seconds. Only in the first few minutes after a new deploy can a question about one of those files take a minute or two. One known gap: Parliament's site refuses the deputies file to Cloudflare's network, so `parliament_deputies` only works on a local install (search and votes work on both). For heavy use, run your own copy with `uvx` as below, or `docker build -t portugal-mcp . && docker run -p 8000:8000 portugal-mcp`. The hosted copy is non-commercial and stays that way: its live incidents come from Fogos.pt, whose API terms rule out commercial use.
 
+**Usage counts, and nothing more.** To know whether anyone uses it, the hosted endpoint counts requests anonymously: per day, the MCP method, the tool name, the kind of client (Claude, ChatGPT, Cursor...), the country Cloudflare already knows and whether the call worked. It never stores IP addresses, tool arguments (they can hold a postal code or coordinates), session ids or cookies, and keeps the counts for 400 days. The totals are public at [`mcp.thiagolannes.com/stats`](https://mcp.thiagolannes.com/stats); the code is in `deploy/cloudflare/src/usage-core.ts`. A local install sends nothing anywhere.
+
 ### Install locally
 
 Needs Python 3.10+. With [uv](https://docs.astral.sh/uv/) nothing else is required:

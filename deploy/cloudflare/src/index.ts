@@ -1,7 +1,11 @@
 import { Container, getContainer } from "@cloudflare/containers";
+import { type Event, UsageStats, clientFamily, outcomeOf, parseHits } from "./usage";
+
+export { UsageStats };
 
 interface Env {
   PORTUGAL_MCP: DurableObjectNamespace<PortugalMcp>;
+  USAGE: DurableObjectNamespace<UsageStats>;
   LIMITER: RateLimit;
   LIMITER_CONNECTORS: RateLimit;
   FOGOS_API_KEY?: string;
@@ -96,9 +100,20 @@ export default {
     }
   },
 
-  async fetch(req: Request, env: Env): Promise<Response> {
+  async fetch(req: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(req.url);
     const name = url.pathname.replace(/^\/+|\/+$/g, "");
+
+    if (name === "stats" && req.method === "GET") {
+      // Public, aggregated, anonymous: counts per day, tool, client family, country and outcome.
+      const days = Math.min(Math.max(Number(url.searchParams.get("days") ?? "30") || 30, 1), 365);
+      const usage = env.USAGE.get(env.USAGE.idFromName("global"));
+      const summary = (await usage.summary(days)) as Record<string, unknown>;
+      return Response.json(
+        { what: "Anonymous usage of the hosted endpoint: no IPs, no arguments, no sessions are stored.", ...summary },
+        { headers: { ...CORS, "Cache-Control": "public, max-age=300" } },
+      );
+    }
 
     if (name === "") {
       return Response.json(
@@ -108,6 +123,7 @@ export default {
             Object.entries(SERVERS).map(([k, v]) => [k, { endpoint: `${url.origin}/${k}`, what: v.what, install_locally: v.local }]),
           ),
           source: REPO,
+          usage: `${url.origin}/stats`,
         },
         { headers: CORS },
       );
@@ -132,11 +148,40 @@ export default {
     const len = Number(req.headers.get("Content-Length") ?? "0");
     if (len > MAX_BODY) return rpcError(413, "Request too large.");
 
+    // Anonymous counting (see src/usage.ts): read the JSON-RPC method and tool name only.
+    let forward: Request = req;
+    let hits: ReturnType<typeof parseHits> = [];
+    if (req.method === "POST") {
+      const body = await req.text();
+      if (body.length > MAX_BODY) return rpcError(413, "Request too large.");
+      const client = connector ? "claude" : clientFamily(req.headers.get("User-Agent") ?? "");
+      const country = (req.cf?.country as string | undefined) ?? "XX";
+      hits = parseHits(body, client, country);
+      forward = new Request(req.url, { method: req.method, headers: req.headers, body });
+    }
+
     // the container serves MCP at /mcp; the public path is the server's name
     const inner = new URL(req.url);
     inner.pathname = "/mcp";
-    const res = await getContainer(server.binding(env)).fetch(new Request(inner, req));
-    const out = new Response(res.body, res);
+    const started = Date.now();
+    const res = await getContainer(server.binding(env)).fetch(new Request(inner, forward));
+    let body = res.body;
+    if (hits.length) {
+      const usage = env.USAGE.get(env.USAGE.idFromName("global"));
+      const needsBody = hits.some((h) => h.method === "tools/call") && body !== null && res.status < 400;
+      let copy: ReadableStream | null = null;
+      if (needsBody && body) [body, copy] = body.tee();
+      ctx.waitUntil(
+        (async () => {
+          const text = copy ? await new Response(copy).text() : "";
+          const outcome = outcomeOf(res.status, text);
+          const ms = Date.now() - started;
+          const events: Event[] = hits.map((h) => ({ ...h, outcome: h.method === "tools/call" ? outcome : outcomeOf(res.status, ""), ms }));
+          await usage.record(events);
+        })().catch((e) => console.error(`usage: ${e}`)),
+      );
+    }
+    const out = new Response(body, res);
     for (const [k, v] of Object.entries(CORS)) out.headers.set(k, v);
     return out;
   },

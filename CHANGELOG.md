@@ -1,5 +1,9 @@
 # Changelog
 
+## Hosted endpoint — 2026-11-23
+
+- Anonymous usage counts on the hosted endpoint: per day, method, tool, client family, country and outcome, in a Durable Object behind a public `GET /stats`. No IPs, arguments, session ids or cookies are stored; counts are kept 400 days. The local package is unchanged and sends nothing. Worker-only change, no new package version; the counting logic has Node tests run in CI.
+
 ## 0.10.2 — 2026-11-16
 
 - `transit_vehicles`: when an operator's own live feed is down (AGIT's SMTUC feed has been answering with a JSON status instead of GTFS-Realtime), the tool now says so plainly instead of the cryptic "unsupported protobuf wire type 3". A feed address that answers 4xx is reported as a real break.
