@@ -22,9 +22,16 @@
     }
   ],
   "durable_objects": {
-    "bindings": [{ "name": "PORTUGAL_MCP", "class_name": "PortugalMcp" }]
+    "bindings": [
+      { "name": "PORTUGAL_MCP", "class_name": "PortugalMcp" },
+      // anonymous daily counters behind GET /stats (src/usage.ts): no IPs, no arguments
+      { "name": "USAGE", "class_name": "UsageStats" }
+    ]
   },
-  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["PortugalMcp"] }],
+  "migrations": [
+    { "tag": "v1", "new_sqlite_classes": ["PortugalMcp"] },
+    { "tag": "v2", "new_sqlite_classes": ["UsageStats"] }
+  ],
   // per client IP; period must be 10 or 60 seconds. Claude's custom connectors all arrive from
   // Anthropic's outbound addresses, so those get a larger budget (src/index.ts, CONNECTOR_RANGES).
   "ratelimits": [

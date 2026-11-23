@@ -54,9 +54,10 @@ jobs:
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 22
-      - name: Worker typechecks and its config is valid
+      - name: Worker typechecks, its tests pass and its config is valid
         working-directory: deploy/cloudflare
         run: |
           npm ci
           npx tsc -p .
+          npm test
           npx wrangler deploy --dry-run --outdir .wrangler-dry
