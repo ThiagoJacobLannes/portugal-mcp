@@ -165,6 +165,9 @@ def serve_hosted() -> None:
     from starlette.requests import Request
     from starlette.responses import JSONResponse
 
+    from . import common
+
+    common.REDACT_LOGS = True  # no user input in the shared host's logs (PRIVACY.md)
     s = mcp.settings
     s.host = os.environ.get("MCP_HOST", "0.0.0.0")  # noqa: S104 - reachable only through the Worker
     s.port = int(os.environ.get("MCP_PORT", "8000"))

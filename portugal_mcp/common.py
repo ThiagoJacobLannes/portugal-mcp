@@ -354,9 +354,24 @@ def pt_number(value: Any) -> float | None:
         return None
 
 
+# On the shared hosted endpoint (serve_hosted sets this), error messages can echo what a user typed
+# (a place, a postal code) or carry an upstream URL built from it, and the host keeps logs for a few
+# days. There the log gets only the tool, the exception type and the code location (PRIVACY.md).
+REDACT_LOGS = False
+
+
 def fail(log_: logging.Logger, tool: str, exc: Exception) -> dict[str, Any]:
     """Uniform error payload: bad input is a warning, anything else gets a traceback in the log."""
-    if isinstance(exc, ValueError):
+    if REDACT_LOGS:
+        import traceback
+
+        where = traceback.extract_tb(exc.__traceback__)[-1:] if exc.__traceback__ else []
+        loc = f" at {where[0].filename.rsplit('/', 1)[-1].rsplit(chr(92), 1)[-1]}:{where[0].lineno}" if where else ""
+        if isinstance(exc, ValueError):
+            log_.warning("%s: bad input (%s)", tool, type(exc).__name__)
+        else:
+            log_.error("%s failed: %s%s", tool, type(exc).__name__, loc)
+    elif isinstance(exc, ValueError):
         log_.warning("%s: %s", tool, exc)
     else:
         log_.exception("%s failed", tool)

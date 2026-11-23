@@ -106,13 +106,33 @@ export default {
 
     if (name === "stats" && req.method === "GET") {
       // Public, aggregated, anonymous: counts per day, tool, client family, country and outcome.
+      // Rate-limited per IP like the MCP path, and cached at the edge for 5 minutes, so a burst of
+      // visits costs one database query. The cache key is normalised: only `days` varies it.
+      const ip = req.headers.get("CF-Connecting-IP") ?? "unknown";
+      const { success } = await env.LIMITER.limit({ key: `stats:${ip}` });
+      if (!success) {
+        return new Response("Too many requests for /stats; try again in a minute.", {
+          status: 429,
+          headers: { ...CORS, "Retry-After": "60" },
+        });
+      }
       const days = Math.min(Math.max(Number(url.searchParams.get("days") ?? "30") || 30, 1), 365);
+      const key = new Request(`${url.origin}/stats?days=${days}`);
+      const cache = caches.default;
+      const cached = await cache.match(key);
+      if (cached) return cached;
       const usage = env.USAGE.get(env.USAGE.idFromName("global"));
       const summary = (await usage.summary(days)) as Record<string, unknown>;
-      return Response.json(
-        { what: "Anonymous usage of the hosted endpoint: no IPs, no arguments, no sessions are stored.", ...summary },
+      const res = Response.json(
+        {
+          what: "Anonymous usage of the hosted endpoint: no IPs, no arguments, no sessions are stored.",
+          privacy: `${REPO}/blob/main/PRIVACY.md`,
+          ...summary,
+        },
         { headers: { ...CORS, "Cache-Control": "public, max-age=300" } },
       );
+      ctx.waitUntil(cache.put(key, res.clone()));
+      return res;
     }
 
     if (name === "") {
