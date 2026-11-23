@@ -1326,3 +1326,20 @@ def test_package_summary_fits_pypi():
 
     text = (Path(__file__).parent.parent / "pyproject.toml").read_text(encoding="utf-8")
     assert len(re.search(r'^description = "(.*)"$', text, re.M).group(1)) <= 512
+
+
+def test_hosted_logs_never_carry_user_input(monkeypatch, caplog):
+    """On the shared endpoint an error message can echo a place or a postal code: log only the type."""
+    import logging
+
+    lg = logging.getLogger("portugal_mcp.test")
+    monkeypatch.setattr(common, "REDACT_LOGS", True)
+    with caplog.at_level(logging.INFO):
+        out = common.fail(lg, "public_holidays", ValueError("no municipality called 'Rua Secreta 12'"))
+        try:
+            raise RuntimeError("GET https://json.geoapi.pt/cp/1100-148 failed")
+        except RuntimeError as exc:
+            common.fail(lg, "postal_code", exc)
+    assert out == {"error": "no municipality called 'Rua Secreta 12'"}  # the user still sees the message
+    assert "Rua Secreta" not in caplog.text and "1100-148" not in caplog.text
+    assert "public_holidays: bad input (ValueError)" in caplog.text and "postal_code failed: RuntimeError at test_unit.py:" in caplog.text

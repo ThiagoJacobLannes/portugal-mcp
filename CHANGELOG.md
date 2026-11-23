@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.10.3 — 2026-11-23
+
+- Privacy: new [PRIVACY.md](PRIVACY.md) covering the local install (sends nothing) and the hosted endpoint (anonymous counts, logs, IPs, what the public sources see).
+- On the hosted endpoint (`--hosted`), tool errors are logged as the tool name and exception type only (plus the code location for unexpected ones), never the message, which can echo a place or postal code a user typed or an upstream URL built from it. Local installs keep the full messages and tracebacks.
+- Hosted endpoint: `/stats` is rate-limited per address and cached at the edge for 5 minutes (one database query per burst of visits), and links PRIVACY.md.
+
 ## Hosted endpoint — 2026-11-23
 
 - Anonymous usage counts on the hosted endpoint: per day, method, tool, client family, country and outcome, in a Durable Object behind a public `GET /stats`. No IPs, arguments, session ids or cookies are stored; counts are kept 400 days. The local package is unchanged and sends nothing. Worker-only change, no new package version; the counting logic has Node tests run in CI.

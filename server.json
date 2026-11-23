@@ -8,12 +8,12 @@
     "source": "github"
   },
   "websiteUrl": "https://thiagolannes.com",
-  "version": "0.10.2",
+  "version": "0.10.3",
   "packages": [
     {
       "registryType": "pypi",
       "identifier": "portugal-mcp",
-      "version": "0.10.2",
+      "version": "0.10.3",
       "runtimeHint": "uvx",
       "transport": {
         "type": "stdio"
